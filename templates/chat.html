@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>聊天室</title>
+  <style>
+    body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
+    #sidebar { width: 200px; background: #eee; padding: 10px; overflow-y: auto; }
+    #chat { flex: 1; display: flex; flex-direction: column; }
+    #messages { flex: 1; overflow-y: scroll; border-top: 1px solid #ccc; padding: 5px; }
+    #input { display: flex; }
+    #input input { flex: 1; }
+    .active {
+      background-color: #cce5ff;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+<div id="sidebar">
+  <h3>聊天室</h3>
+  <div>
+    <input type="text" id="newRoomName" placeholder="新聊天室名稱">
+    <button onclick="createGroup()">建立</button>
+  </div>
+  <ul id="groupList"></ul>
+  <h4>在線用戶</h4>
+  <ul id="onlineUsers"></ul>
+</div>
+<div id="chat">
+  <div id="messages"></div>
+  <div id="input">
+    <input id="message" autocomplete="off"><button onclick="sendMessage()">送出</button>
+  </div>
+</div>
+
+<script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+<script>
+  const socket = io();
+  let username = prompt("輸入名稱：");
+  let currentRoom = "";
+
+  const groupList = document.getElementById('groupList');
+  const onlineUsers = document.getElementById('onlineUsers');
+  const messages = document.getElementById('messages');
+
+  // 初始化聊天室清單
+  fetch('/get_rooms')
+    .then(res => res.json())
+    .then(data => data.rooms.forEach(addRoomToList));
+
+  socket.emit('login', { username });
+
+  // 在線用戶更新
+  socket.on('update_users', function(users) {
+    onlineUsers.innerHTML = '';
+    users.forEach(user => {
+      const li = document.createElement('li');
+      li.textContent = user;
+      li.onclick = () => {
+        if (user === username) return; // 跳過自己
+        const room = privateRoomName(username, user);
+        clearActiveStatus();
+        setActiveUser(user);
+        joinRoom(room);
+      };
+      onlineUsers.appendChild(li);
+    });
+  });
+
+  // 訊息顯示
+  socket.on('message', function(data) {
+    const m = document.createElement('div');
+    m.innerHTML = `<b>${data.user}</b> (${data.timestamp}): ${data.msg}`;
+    messages.appendChild(m);
+    messages.scrollTop = messages.scrollHeight;
+  });
+
+  // 建立聊天室
+  function createGroup() {
+    const name = document.getElementById('newRoomName').value.trim();
+    if (!name) return alert("請輸入聊天室名稱");
+    socket.emit('create_group', { name });
+  }
+
+  // 加入房間
+  function joinRoom(room) {
+    currentRoom = room;
+    messages.innerHTML = '';
+    socket.emit('join_room', { room });
+    
+    //clearActiveStatus();
+
+    const roomLi = groupList.querySelector(`li[data-room="${room}"]`);
+    if (roomLi) roomLi.classList.add('active');
+  }
+
+  // 傳送訊息
+  function sendMessage() {
+    const msg = document.getElementById('message').value;
+    if (!msg) return;
+    socket.emit('send_message', { room: currentRoom, msg });
+    document.getElementById('message').value = '';
+  }
+
+  // 私聊房間命名
+  function privateRoomName(user1, user2) {
+    return 'pm-' + [user1, user2].sort().join('-');
+  }
+
+  // 新增聊天室項目
+  function addRoomToList(name) {
+    if (groupList.querySelector(`li[data-room="${name}"]`)) return;
+    const li = document.createElement('li');
+    li.textContent = name;
+    li.dataset.room = name;
+    li.onclick = () => {
+      clearActiveStatus();
+      li.classList.add('active');
+      joinRoom(name);
+    };
+    groupList.appendChild(li);
+  }
+
+  // 新聊天室通知
+  socket.on('group_created', function(data) {
+    addRoomToList(data.name);
+  });
+
+  // 清除所有 active 樣式
+  function clearActiveStatus() {
+    document.querySelectorAll('#groupList li, #onlineUsers li').forEach(li => {
+      li.classList.remove('active');
+    });
+  }
+
+  // 設定某個使用者為 active
+  function setActiveUser(user) {
+    const listItems = onlineUsers.querySelectorAll('#onlineUsers li');
+    const target = Array.from(listItems).find(li => li.textContent.trim() === user);
+    if (target) target.classList.add('active');
+    
+  }
+</script>
+</body>
+</html>

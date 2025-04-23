@@ -1,0 +1,86 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>聊天室登入</title>
+  <style>
+    .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; }
+    .modal-content { background: white; padding: 20px; border-radius: 5px; width: 300px; }
+  </style>
+</head>
+<body>
+  {% if login_required %}
+  <div id="loginModal" class="modal">
+    <div class="modal-content">
+      <h3>登入</h3>
+      <input id="loginUsername" placeholder="帳號"><br><br>
+      <input id="loginPassword" type="password" placeholder="密碼"><br><br>
+      <button onclick="login()">登入</button>
+      <p>沒有帳號？<a href="#" onclick="showRegister()">註冊</a></p>
+      <p><a href="#" onclick="showReset()">忘記密碼</a></p>
+    </div>
+  </div>
+  {% else %}
+  <div id="sidebar">
+    <h3>聊天室</h3>
+    <div>
+      <input type="text" id="newRoomName" placeholder="新聊天室名稱">
+      <button onclick="createGroup()">建立</button>
+    </div>
+    <ul id="groupList"></ul>
+    <h4>在線用戶</h4>
+    <ul id="onlineUsers"></ul>
+    <p>歡迎，{{ username }}，<a href="/logout">登出</a></p>
+  </div>
+  <div id="chat">
+    <div id="messages"></div>
+    <div id="input">
+      <input id="message" autocomplete="off"><button onclick="sendMessage()">送出</button>
+    </div>
+  </div>
+  {% endif %}
+<script>
+function login() {
+  fetch('/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      username: document.getElementById('loginUsername').value,
+      password: document.getElementById('loginPassword').value
+    })
+  }).then(res => res.json()).then(data => {
+    if (data.success) location.reload();
+    else alert(data.message);
+  });
+}
+function showRegister() {
+  const name = prompt("帳號：");
+  const pw = prompt("密碼：");
+  fetch('/register', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ username: name, password: pw })
+  }).then(res => res.json()).then(data => {
+    if (data.success) alert("註冊成功，請登入");
+    else alert(data.message);
+  });
+}
+function showReset() {
+  const name = prompt("帳號：");
+  const pw = prompt("新密碼：");
+  fetch('/reset_password', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ username: name, new_password: pw })
+  }).then(res => res.json()).then(data => {
+    if (data.success) alert("密碼已重設");
+    else alert(data.message);
+  });
+}
+</script>
+{% if username %}
+<p>歡迎，{{ username }}，<a href="/logout">登出</a></p>
+{% endif %}
+</body>
+</html>
