@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>登入</title>
+  <style>
+    body { font-family: sans-serif; background: #f2f2f2; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+    .login-box { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: 300px; }
+    .login-box h2 { text-align: center; }
+    .login-box input { width: 100%; padding: 10px; margin: 10px 0; }
+    .login-box button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 5px; }
+    .login-box p { text-align: center; margin-top: 10px; }
+    .login-box a { color: #007bff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <h2>登入</h2>
+    <input type="text" id="loginUsername" placeholder="帳號">
+    <input type="password" id="loginPassword" placeholder="密碼">
+    <button onclick="login()">登入</button>
+    <p><a href="#" onclick="location.href = '/register'">註冊</a> | <a href="#" onclick="showReset()">忘記密碼</a></p>
+  </div>
+</body>
+</html>
+
+<script>
+    function login() {
+        fetch('/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+            username: document.getElementById('loginUsername').value,
+            password: document.getElementById('loginPassword').value
+            })
+        }).then(res => res.json()).then(data => {
+            if (data.success) location.href = "/";
+            else alert(data.message);
+        });
+    }
+
+    function showReset() {
+    const name = prompt("帳號：");
+    const pw = prompt("新密碼：");
+    fetch('/reset_password', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ username: name, new_password: pw })
+    }).then(res => res.json()).then(data => {
+        if (data.success) alert("密碼已重設");
+        else alert(data.message);
+    });
+    }
+
+</script>

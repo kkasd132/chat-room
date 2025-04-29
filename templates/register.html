@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>註冊</title>
+</head>
+<body>
+  <h2>註冊帳號</h2>
+  <input id="registerUsername" placeholder="帳號"><br>
+  <input id="registerPassword" type="password" placeholder="密碼"><br>
+  <button onclick="register()">註冊</button>
+
+  <p>已有帳號？<a href="/login">返回登入</a></p>
+
+  <script>
+    function register() {
+      const username = document.getElementById('registerUsername').value;
+      const password = document.getElementById('registerPassword').value;
+
+      fetch('/register', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ username, password })
+      }).then(res => res.json()).then(data => {
+        if (data.success) {
+          alert("註冊成功，請登入");
+          location.href = "/login";
+        } else {
+          alert(data.message);
+        }
+      });
+    }
+  </script>
+</body>
+</html>
