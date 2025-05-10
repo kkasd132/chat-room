@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, session, redirect, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = 'secret-key'
@@ -11,6 +12,17 @@ socketio = SocketIO(app)
 
 online_users = set()
 
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(100), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+        
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+    
 class Room(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True)
@@ -21,7 +33,7 @@ class Message(db.Model):
     room = db.Column(db.String(100))
     username = db.Column(db.String(100))
     msg = db.Column(db.String(500))
-    timestamp = db.Column(db.DateTime, default=datetime.now())
+    timestamp = db.Column(db.DateTime, default=datetime.now)
 
 @app.route('/')
 def index():
@@ -38,12 +50,9 @@ def login_page():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
-    conn = db.engine.raw_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM users WHERE username=? AND password=?', (data['username'], data['password']))
-    user = cur.fetchone()
-    if user:
-        session['username'] = data['username']
+    user = User.query.filter_by(username=data['username']).first()
+    if user and user.check_password(data['password']):
+        session['username'] = user.username
         return jsonify(success=True)
     return jsonify(success=False, message='帳號或密碼錯誤')
 
@@ -56,23 +65,22 @@ def register_page():
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
-    conn = db.engine.raw_connection()
-    try:
-        conn.execute('INSERT INTO users (username, password) VALUES (?, ?)', (data['username'], data['password']))
-        conn.commit()
-        return jsonify(success=True)
-    except Exception:
+    if User.query.filter_by(username=data['username']).first():
         return jsonify(success=False, message='帳號已存在')
+
+    user = User(username=data['username'])
+    user.set_password(data['password'])
+    db.session.add(user)
+    db.session.commit()
+    return jsonify(success=True)
 
 @app.route('/reset_password', methods=['POST'])
 def reset_password():
     data = request.json
-    conn = db.engine.raw_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM users WHERE username=?', (data['username'],))
-    if cur.fetchone():
-        cur.execute('UPDATE users SET password=? WHERE username=?', (data['new_password'], data['username']))
-        conn.commit()
+    user = User.query.filter_by(username=data['username']).first()
+    if user:
+        user.set_password(data['new_password'])
+        db.session.commit()
         return jsonify(success=True)
     return jsonify(success=False, message='帳號不存在')
 
@@ -87,6 +95,31 @@ def get_rooms():
     rooms = Room.query.all()
     room_names = [room.name for room in rooms]
     return {'rooms': room_names}
+
+@app.route('/rename_room', methods=['POST'])
+def rename_room():
+    data = request.json
+    old = data.get('old_name')
+    new = data.get('new_name')
+
+    if not old or not new:
+        return jsonify(success=False, message='缺少名稱')
+
+    # 檢查新名稱是否已存在
+    if Room.query.filter_by(name=new).first():
+        return jsonify(success=False, message='新名稱已存在')
+
+    # 更新 room 表
+    room = Room.query.filter_by(name=old).first()
+    if not room:
+        return jsonify(success=False, message='聊天室不存在')
+    room.name = new
+
+    # 同步更新 message 裡的 room 名稱
+    Message.query.filter_by(room=old).update({'room': new})
+
+    db.session.commit()
+    return jsonify(success=True)
 
 @app.route('/delete_room', methods=['POST'])
 def delete_room():

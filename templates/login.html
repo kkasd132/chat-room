@@ -18,28 +18,28 @@
     <h2>登入</h2>
     <input type="text" id="loginUsername" placeholder="帳號">
     <input type="password" id="loginPassword" placeholder="密碼">
-    <button onclick="login()">登入</button>
+    <button id="login_utton" onclick="login()">登入</button>
     <p><a href="#" onclick="location.href = '/register'">註冊</a> | <a href="#" onclick="showReset()">忘記密碼</a></p>
   </div>
 </body>
 </html>
 
 <script>
-    function login() {
-        fetch('/login', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-            username: document.getElementById('loginUsername').value,
-            password: document.getElementById('loginPassword').value
-            })
-        }).then(res => res.json()).then(data => {
-            if (data.success) location.href = "/";
-            else alert(data.message);
-        });
-    }
+  function login() {
+      fetch('/login', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+          username: document.getElementById('loginUsername').value,
+          password: document.getElementById('loginPassword').value
+          })
+      }).then(res => res.json()).then(data => {
+          if (data.success) location.href = "/";
+          else alert(data.message);
+      });
+  }
 
-    function showReset() {
+  function showReset() {
     const name = prompt("帳號：");
     const pw = prompt("新密碼：");
     fetch('/reset_password', {
@@ -50,6 +50,10 @@
         if (data.success) alert("密碼已重設");
         else alert(data.message);
     });
-    }
-
+  }
+  document.addEventListener('keydown', function(event) {
+  if (event.key === 'Enter') {
+    login();
+  }
+  });
 </script>

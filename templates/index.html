@@ -24,6 +24,18 @@
       display: none;
       position: absolute;
     }
+    .room-options button {
+      display: block;
+      width: 100%;
+      padding: 6px 12px;
+      text-align: left;
+      background: white;
+      border: none;
+      cursor: pointer;
+    }
+    .room-options button:hover {
+      background-color: #eee;
+    }
   </style>
 </head>
 <body>
@@ -52,7 +64,16 @@
   const username = "{{ username }}";
   const socket = io();
   let currentRoom = "";
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.room-options').forEach(opt => opt.style.display = 'none');
+  });
 
+  // Enter鍵送出訊息
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+      sendMessage();
+    }
+  })
     // 初始化聊天室清單
     fetch('/get_rooms')
       .then(res => res.json())
@@ -118,36 +139,86 @@
     }
 
     // 新增聊天室項目
-    function addRoomToList(name) {
-      const li = document.createElement('li');
-      li.setAttribute('data-room', name);
-      li.style.display = 'flex';
-      li.style.justifyContent = 'space-between';
-      li.style.alignItems = 'center';
-      li.style.padding = '4px 8px';
+  function addRoomToList(name) {
+    const li = document.createElement('li');
+    li.setAttribute('data-room', name);
+    li.style.position = 'relative';
+    li.style.display = 'flex';
+    li.style.justifyContent = 'space-between';
+    li.style.alignItems = 'center';
+    li.style.padding = '4px 8px';
 
-      li.innerHTML = `
-        <span>${name}</span>
-        <button onclick="toggleRoomOptions(this)">⋮</button>
-        <div class="room-options" style="display:none;">
-          <button onclick="deleteRoom('${name}')">刪除聊天室</button>
-        </div>
-      `;
-      li.addEventListener('click', (e) => {
-        // 避免點到 ⋮ 或刪除按鈕時也觸發進入房間
-        if (e.target.tagName.toLowerCase() === 'button') return;
-        clearActiveStatus();
-        li.classList.add('active');
-        joinRoom(name);
-      });
-      document.getElementById('groupList').appendChild(li);
+    li.innerHTML = `
+      <span class="room-name">${name}</span>
+      <button class="room-menu-btn" onclick="toggleRoomOptions(event, this)">⋮</button>
+      <div class="room-options" style="display:none; position: absolute; right: 0; top: 100%; background: white; border: 1px solid #ccc; z-index: 10;">
+        <button onclick="renameRoom(this, '${name}')">重新命名聊天室</button>
+        <button onclick="deleteRoom('${name}')">刪除聊天室</button>
+        
+      </div>
+    `;
+
+    // li.addEventListener('click', (e) => {
+    //   if (e.target.closest('.room-menu-btn') || e.target.closest('.room-options')) return;
+    //   clearActiveStatus();
+    //   li.classList.add('active');
+    //   joinRoom(name);
+    // });
+    li.addEventListener('click', (e) => {
+  if (e.target.closest('.room-menu-btn') || e.target.closest('.room-options')) return;
+  clearActiveStatus();
+  li.classList.add('active');
+  const roomName = li.dataset.room;  // ← 這裡改成讀取目前屬性
+  joinRoom(roomName);
+});
+    document.getElementById('groupList').appendChild(li);
+  }
+
+  function toggleRoomOptions(event, button) {
+    event.stopPropagation();
+    const options = button.nextElementSibling;
+
+    // 如果這個是目前已經開啟的，就關閉
+    const isVisible = options.style.display === 'block';
+
+    // 關閉所有下拉選單
+    document.querySelectorAll('.room-options').forEach(opt => opt.style.display = 'none');
+
+    // 如果原本是關閉的，則打開
+    if (!isVisible) {
+      options.style.display = 'block';
     }
+  }
 
-    function toggleRoomOptions(button) {
-      const options = button.nextElementSibling;
-      options.style.display = options.style.display === 'none' ? 'block' : 'none';
-    }
+  function renameRoom(button, oldName) {
+    const newName = prompt("請輸入新的聊天室名稱", oldName);
+    if (!newName || newName === oldName) return;
 
+    fetch('/rename_room', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ old_name: oldName, new_name: newName })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        // 更新聊天室清單顯示
+        const li = button.closest('li');
+        li.setAttribute('data-room', newName);
+        li.querySelector('.room-name').textContent = newName;
+
+        // ✅ 若使用者正在這個房間，更新 currentRoom
+        if (currentRoom === oldName) {
+          currentRoom = newName;
+          joinRoom(newName);
+        }
+
+        alert("聊天室名稱已更新");
+      } else {
+        alert(data.message || "聊天室改名失敗");
+      }
+    });
+  }
     function deleteRoom(name) {
       if (!confirm(`確定要刪除聊天室 "${name}"？這將刪除所有訊息。`)) return;
 
