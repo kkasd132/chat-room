@@ -3,7 +3,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>聊天室登入</title>
+  <title>網頁聊天室</title>
   <style>
     .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; }
     .modal-content { background: white; padding: 20px; border-radius: 5px; width: 300px; }    body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
@@ -48,18 +48,20 @@
     <ul id="groupList"></ul>
     <h4>在線用戶</h4>
     <ul id="onlineUsers"></ul>
-    <p>歡迎，{{ username }}，<a href="/logout">登出</a></p>
+    <p>歡迎，{{ username }}，<a href="/logout">登出</a> <button onclick="enableNotifications()">啟用通知</button></p>
   </div>
   <div id="chat">
     <div id="messages"></div>
-    <div id="input">
-      <input id="message" autocomplete="off"><button onclick="sendMessage()">送出</button>
-    </div>
+  <div id="input">
+    <input id="message" autocomplete="off">
+    <input type="file" id="imageInput">
+    <button onclick="sendMessage()">送出</button>
+  </div>
   </div>
 </body>
 </html>
 
-<script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+<script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
 <script>
   const username = "{{ username }}";
   const socket = io();
@@ -99,17 +101,71 @@
     });
 
     // 訊息顯示
+    let originalTitle = document.title;
+    let blinkInterval;
+
+    function startBlink() {
+      let isBlink = false;
+      blinkInterval = setInterval(() => {
+        document.title = isBlink ? '【新訊息】網頁聊天室' : originalTitle;
+        isBlink = !isBlink;
+      }, 800);
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        document.title = originalTitle;
+        clearInterval(blinkInterval);
+      }
+    });
+
     socket.on('message', function(data) {
       const m = document.createElement('div');
-      m.innerHTML = `<b>${data.user}</b> (${data.timestamp}): ${data.msg}`;
+      let content = data.msg;
+      if (data.image) {
+        content = `<img src="${data.image}" style="max-width: 200px; max-height: 200px;">`;
+      }
+      m.innerHTML = `<b>${data.user}</b> (${data.timestamp}): ${content}`;
       messages.appendChild(m);
       messages.scrollTop = messages.scrollHeight;
+
+      // 頁面可見時閃爍標題
+      if (document.visibilityState === 'visible') {
+        originalTitle = document.title;  // 更新原始標題
+        startBlink();
+      }
+
+      // 頁面不可見時顯示桌面通知
+      if (document.visibilityState !== 'visible' && Notification.permission === 'granted') {
+        const notificationBody = data.image ? '收到一張圖片' : data.msg;
+        new Notification(`新訊息來自 ${data.user}`, {
+          body: notificationBody,
+          icon: '/static/notification-icon.png'
+        });
+      }
     });
+
+    function enableNotifications() {
+      if (!('Notification' in window)) {
+        alert('此瀏覽器不支援通知功能');
+        return;
+      }
+      if (Notification.permission === 'granted') {
+        alert('通知功能已啟用');
+      } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            alert('通知功能已啟用');
+          }
+        });
+      }
+    }
 
     // 建立聊天室
     function createGroup() {
       const name = document.getElementById('newRoomName').value.trim();
       if (!name) return alert("請輸入聊天室名稱");
+      document.getElementById('newRoomName').value = "";
       socket.emit('create_group', { name });
     }
 
@@ -254,5 +310,39 @@
       const target = Array.from(listItems).find(li => li.textContent.trim() === user);
       if (target) target.classList.add('active');
       
+    }
+    function sendMessage() {
+      const msgInput = document.getElementById('message');
+      const imageInput = document.getElementById('imageInput');
+      const msg = msgInput.value.trim();
+      const file = imageInput.files[0];
+
+      // 傳送圖片（優先）
+      if (file) {
+        const formData = new FormData();
+        formData.append('image', file);
+
+        fetch('/upload_image', {
+          method: 'POST',
+          body: formData
+        }).then(res => res.json()).then(data => {
+          if (data.success) {
+            socket.emit('send_message', {
+              room: currentRoom,
+              msg: '',  // 文字留空
+              image: data.url  // 圖片網址
+            });
+            imageInput.value = ''; // 清空檔案欄位
+          } else {
+            alert(data.message);
+          }
+        });
+      }
+
+      // 傳送文字
+      if (msg) {
+        socket.emit('send_message', { room: currentRoom, msg });
+        msgInput.value = '';
+      }
     }
 </script>

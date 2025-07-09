@@ -3,12 +3,19 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
+import os
+from werkzeug.utils import secure_filename
 
+UPLOAD_FOLDER = 'static/uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app = Flask(__name__)
 app.secret_key = 'secret-key'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db'
 db = SQLAlchemy(app)
-socketio = SocketIO(app)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+socketio = SocketIO(app, cors_allowed_origins='*')
 
 online_users = set()
 
@@ -33,6 +40,7 @@ class Message(db.Model):
     room = db.Column(db.String(100))
     username = db.Column(db.String(100))
     msg = db.Column(db.String(500))
+    image = db.Column(db.String(500))  # 新增圖片網址欄位
     timestamp = db.Column(db.DateTime, default=datetime.now)
 
 @app.route('/')
@@ -140,6 +148,28 @@ def delete_room():
 
     return jsonify(success=True)
 
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/upload_image', methods=['POST'])
+def upload_image():
+    if 'image' not in request.files:
+        return jsonify(success=False, message="No image part")
+
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify(success=False, message="No selected file")
+
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        file.save(filepath)
+
+        # 回傳靜態檔案網址給前端
+        return jsonify(success=True, url=f"/static/uploads/{filename}")
+
+    return jsonify(success=False, message="Invalid file type")
 @socketio.on('connect')
 def connect():
     if 'username' not in session:
@@ -195,14 +225,16 @@ def handle_join(data):
 @socketio.on('send_message')
 def handle_send(data):
     room = data['room']
-    msg = data['msg']
+    msg = data.get('msg', '')
+    image = data.get('image', '')
     username = session['username']
-    m = Message(room=room, username=username, msg=msg)
+    m = Message(room=room, username=username, msg=msg, image=image)
     db.session.add(m)
     db.session.commit()
     emit('message', {
         'user': username,
         'msg': msg,
+        'image': image,
         'room': room,
         'timestamp': m.timestamp.strftime('%H:%M')
     }, room=room)
@@ -210,4 +242,4 @@ def handle_send(data):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    socketio.run(app, debug=True)
+    socketio.run(app, debug=True,port=8081)
