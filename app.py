@@ -91,6 +91,11 @@ def reset_password():
         db.session.commit()
         return jsonify(success=True)
     return jsonify(success=False, message='帳號不存在')
+@app.route('/setting', methods=['GET'])
+def setting():
+    if "username" not in session:
+        return redirect("/login")
+    return render_template("setting.html", username=session["username"])
 
 @app.route('/logout')
 def logout():

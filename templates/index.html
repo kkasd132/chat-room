@@ -3,40 +3,8 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <link rel="stylesheet" href="/static/css/chat-room.css">
   <title>網頁聊天室</title>
-  <style>
-    .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; }
-    .modal-content { background: white; padding: 20px; border-radius: 5px; width: 300px; }    body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
-    #sidebar { width: 200px; background: #eee; padding: 10px; overflow-y: auto; }
-    #chat { flex: 1; display: flex; flex-direction: column; }
-    #messages { flex: 1; overflow-y: scroll; border-top: 1px solid #ccc; padding: 5px; }
-    #input { display: flex; }
-    #input input { flex: 1; }
-    .active {
-      background-color: #cce5ff;
-      font-weight: bold;
-    }
-    .room-options {
-      background: #eee;
-      border: 1px solid #ccc;
-      padding: 4px;
-      margin-left: 10px;
-      display: none;
-      position: absolute;
-    }
-    .room-options button {
-      display: block;
-      width: 100%;
-      padding: 6px 12px;
-      text-align: left;
-      background: white;
-      border: none;
-      cursor: pointer;
-    }
-    .room-options button:hover {
-      background-color: #eee;
-    }
-  </style>
 </head>
 <body>
   <div id="sidebar">
@@ -48,7 +16,13 @@
     <ul id="groupList"></ul>
     <h4>在線用戶</h4>
     <ul id="onlineUsers"></ul>
-    <p>歡迎，{{ username }}，<a href="/logout">登出</a> <button onclick="enableNotifications()">啟用通知</button></p>
+    <div class="user-panel">
+        <p>歡迎，{{ username }}</p>
+        <div class="user-controls">
+            <a href="/logout" class="control-btn">登出</a>
+            <button class="control-btn" onclick="showSettings()">⚙️ 進階設定</button>
+        </div>
+    </div>
   </div>
   <div id="chat">
     <div id="messages"></div>
@@ -62,6 +36,7 @@
 </html>
 
 <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chat-room.js') }}"></script>
 <script>
   const username = "{{ username }}";
   const socket = io();
@@ -123,9 +98,11 @@
       const m = document.createElement('div');
       let content = data.msg;
       if (data.image) {
-        content = `<img src="${data.image}" style="max-width: 200px; max-height: 200px;">`;
+        content = `<img src="${escapeHTML(data.image)}" style="max-width: 200px; max-height: 200px;">`;
+      } else {
+        content = escapeHTML(data.msg);
       }
-      m.innerHTML = `<b>${data.user}</b> (${data.timestamp}): ${content}`;
+      m.innerHTML = `<b>${escapeHTML(data.user)}</b> (${data.timestamp}): ${content}`;
       messages.appendChild(m);
       messages.scrollTop = messages.scrollHeight;
 
@@ -187,6 +164,15 @@
       if (!msg) return;
       socket.emit('send_message', { room: currentRoom, msg });
       document.getElementById('message').value = '';
+    }
+
+    function showSettings() {
+      fetch('/setting')
+        .then(res => res.text())
+        .then(html => {
+          document.getElementById('chat').innerHTML = html;
+          initSettings();
+        });
     }
 
     // 私聊房間命名
@@ -345,4 +331,27 @@
         msgInput.value = '';
       }
     }
+    function escapeHTML(str) {
+      const div = document.createElement('div');
+      div.appendChild(document.createTextNode(str));
+      return div.innerHTML;
+    }
+    (function applySettingsOnLoad() {
+      const settings = JSON.parse(localStorage.getItem('chatSettings') || '{}');
+
+      if (settings.bgType === 'image' && settings.bgImage) {
+        document.body.style.background = `url(${settings.bgImage}) center/cover no-repeat`;
+      } else if (settings.bgColor) {
+        document.body.style.background = settings.bgColor;
+      }
+
+      if (settings.blurValue) {
+        document.body.style.backdropFilter = `blur(${settings.blurValue}px)`;
+      }
+
+      if (settings.fontColor) {
+        document.documentElement.style.setProperty('--font-color', settings.fontColor);
+      }
+    })();
+
 </script>
