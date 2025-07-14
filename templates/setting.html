@@ -154,5 +154,10 @@
         <button class="apply-btn" onclick="applySettings()">套用設定</button>
     </div>
     <script src="{{ url_for('static', filename='js/chat-room.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            initSettings();
+            });
+    </script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+
 :root {
   --font-color: #2c3e50;
 }
@@ -13,7 +14,7 @@ body {
   background-repeat: no-repeat;
   background-size: cover;
   background-position: center;
-  backdrop-filter: none;
+  backdrop-filter: var(--blur-amount, none);
 }
 
 
@@ -93,4 +94,17 @@ button:hover {
 }
 .room-options button:hover {
     background-color: #eee;
+}
+
+.chat-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  transition: filter 0.3s;
 }

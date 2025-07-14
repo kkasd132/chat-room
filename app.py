@@ -5,7 +5,8 @@ from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from werkzeug.utils import secure_filename
-
+import uuid
+from datetime import datetime
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app = Flask(__name__)
@@ -30,6 +31,14 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
     
+class UserSetting(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True)
+    bg_color = db.Column(db.String(10), default='#ffffff')
+    font_color = db.Column(db.String(10), default='#000000')
+    blur = db.Column(db.Integer, default=0)
+    custom_bg = db.Column(db.String(200))  
+
 class Room(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True)
@@ -47,7 +56,18 @@ class Message(db.Model):
 def index():
     if "username" not in session:
         return redirect("/login")
-    return render_template("index.html", username=session["username"], login_required=False)
+
+    user = User.query.filter_by(username=session['username']).first()
+    setting = UserSetting.query.filter_by(user_id=user.id).first()
+
+    style = {
+        'bg_color': setting.bg_color if setting else '#ffffff',
+        'font_color': setting.font_color if setting else '#000000',
+        'blur': setting.blur if setting else 0,
+        'custom_bg': setting.custom_bg if setting and setting.custom_bg else ''
+    }
+
+    return render_template("index.html", username=user.username, style=style)
 
 @app.route('/login', methods=['GET'])
 def login_page():
@@ -158,6 +178,43 @@ def allowed_file(filename):
 
 @app.route('/upload_image', methods=['POST'])
 def upload_image():
+    file = request.files.get('image')
+    if not file or file.filename == '':
+        return jsonify(success=False, message="No selected file")
+    if file and allowed_file(file.filename):
+        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+        ext = os.path.splitext(file.filename)[1]
+        unique_name = f"{session['username']}_{timestamp}_{uuid.uuid4().hex}{ext}"
+        safe_name = secure_filename(unique_name)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], safe_name)
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        file.save(filepath)
+        return jsonify(success=True, url=f"/static/uploads/{safe_name}")
+    return jsonify(success=False, message="Invalid file type")
+
+@app.route('/save_settings', methods=['POST'])
+def save_settings():
+    if "username" not in session:
+        return jsonify(success=False)
+
+    user = User.query.filter_by(username=session['username']).first()
+    setting = UserSetting.query.filter_by(user_id=user.id).first()
+    data = request.json
+    print(f'data:{data}')
+    if not setting:
+        setting = UserSetting(user_id=user.id)
+
+    setting.bg_color = data.get('bg_color', '#ffffff')
+    setting.font_color = data.get('font_color', '#000000')
+    setting.blur = data.get('blur', 0)
+    setting.custom_bg = data.get('custom_bg', '')
+
+    db.session.add(setting)
+    db.session.commit()
+    return jsonify(success=True)
+
+@app.route('/upload_bg_image', methods=['POST'])
+def upload_bg_image():
     if 'image' not in request.files:
         return jsonify(success=False, message="No image part")
 
@@ -166,15 +223,18 @@ def upload_image():
         return jsonify(success=False, message="No selected file")
 
     if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        user = User.query.filter_by(username=session['username']).first()
+        ext = file.filename.rsplit('.', 1)[1].lower()
+        filename = f"user_{user.id}.{ext}"
+        folder = os.path.join(app.static_folder, 'uploads', 'user_bg')
+        os.makedirs(folder, exist_ok=True)
+        filepath = os.path.join(folder, filename)
         file.save(filepath)
 
-        # 回傳靜態檔案網址給前端
-        return jsonify(success=True, url=f"/static/uploads/{filename}")
+        return jsonify(success=True, url=f"/static/uploads/user_bg/{filename}")
 
     return jsonify(success=False, message="Invalid file type")
+
 @socketio.on('connect')
 def connect():
     if 'username' not in session:
@@ -222,6 +282,7 @@ def handle_join(data):
         emit('message', {
             'user': m.username,
             'msg': m.msg,
+            'image': m.image,
             'room': m.room,
             'timestamp': m.timestamp.strftime('%H:%M')
         })
