@@ -6,7 +6,7 @@
 body {
   margin: 0;
   padding: 0;
-  font-family: Arial, sans-serif;
+  font-family: Arial, sans-serif; /* ← 避免和 sans-serif 衝突 */
   color: var(--font-color);
   background-color: #f9f9f9;
   transition: background 0.3s, backdrop-filter 0.3s;
@@ -15,8 +15,9 @@ body {
   background-size: cover;
   background-position: center;
   backdrop-filter: var(--blur-amount, none);
+  display: flex;
+  height: 100vh;
 }
-
 
 /* 每則訊息樣式 */
 .message {
@@ -52,6 +53,7 @@ body {
 /* 按鈕 */
 button {
   padding: 8px 12px;
+  margin-bottom: 10px;
   background-color: #3498db;
   color: white;
   border: none;
@@ -64,12 +66,60 @@ button:hover {
 }
 
 
+
 .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; }
-.modal-content { background: white; padding: 20px; border-radius: 5px; width: 300px; }    body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
+.modal-content { background: white; padding: 20px; border-radius: 5px; width: 300px; }
 #sidebar { width: 200px; background: #eee; padding: 10px; overflow-y: auto; }
 #chat { flex: 1; display: flex; flex-direction: column; }
-#messages { flex: 1; overflow-y: scroll; border-top: 1px solid #ccc; padding: 5px; }
+
+#chat-area { 
+  flex: 1; 
+  overflow-y: scroll; 
+  border-top: 1px solid #ccc;
+  padding: 5px; 
+  word-wrap: break-word;       /* 允許單字內部換行 */
+  overflow-wrap: break-word;   /* 現代瀏覽器標準 */
+  white-space: pre-wrap;       /* 保留換行，且允許自動換行 */
+  max-width: 100%;             /* 限制最大寬度 */
+  box-sizing: border-box;
+  }
+
+#chat-area img {
+  max-width: 100%;
+  height: auto;
+}
+#messageInput {
+  padding: 8px;
+  min-height: 80px;
+  max-height: 200px;
+  width: 85%;
+  background-color: #ffffff;
+  margin-bottom: 10px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+  line-height: 1.5;
+  outline: none;
+  white-space: pre-wrap;
+}
+#previewImageContainer {
+  margin-top: 8px;
+  max-height: 120px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#previewImageContainer img {
+  max-height: 100px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+
 #input { display: flex; }
+
 #input input { flex: 1; }
 .active {
     background-color: #cce5ff;
@@ -107,4 +157,11 @@ button:hover {
   background-size: cover;
   background-position: center;
   transition: filter 0.3s;
+}
+
+.main-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
 }

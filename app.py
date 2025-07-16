@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, session, redirect, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from werkzeug.utils import secure_filename
@@ -182,16 +182,16 @@ def upload_image():
     if not file or file.filename == '':
         return jsonify(success=False, message="No selected file")
     if file and allowed_file(file.filename):
-        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
         ext = os.path.splitext(file.filename)[1]
-        unique_name = f"{session['username']}_{timestamp}_{uuid.uuid4().hex}{ext}"
+        username = session.get('username', 'anonymous')
+        unique_name = f"{username}_{timestamp}_{uuid.uuid4().hex}{ext}"
         safe_name = secure_filename(unique_name)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], safe_name)
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         file.save(filepath)
         return jsonify(success=True, url=f"/static/uploads/{safe_name}")
     return jsonify(success=False, message="Invalid file type")
-
 @app.route('/save_settings', methods=['POST'])
 def save_settings():
     if "username" not in session:

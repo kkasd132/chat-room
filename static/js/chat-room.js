@@ -134,3 +134,8 @@ function applySettings() {
         }
     }).catch(() => alert('網路錯誤'));
 }
+
+function backToChat() {
+  document.getElementById('settings').style.display = 'none';
+  document.getElementById('chat').style.display = 'block';
+}

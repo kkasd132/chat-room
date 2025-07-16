@@ -9,7 +9,7 @@
 </head>
 <body>
   <div class="chat-background"></div>
-  <div class="chat-container"> ... </div>
+  <div class="chat-container"></div>
   <div id="sidebar">
     <h3>聊天室</h3>
     <div>
@@ -27,14 +27,18 @@
         </div>
     </div>
   </div>
-  <div id="chat">
-    <div id="messages"></div>
-  <div id="input">
-    <input id="message" autocomplete="off">
-    <button onclick="sendMessage()">送出</button>
-    <input type="file" id="imageInput">
+    <div id="chat">
+      <div id="chat-area"></div>
+      <div id="input">
+        <div id="messageInput" contenteditable="true"></div>
+        <div id="previewImageContainer"></div>
+        <button style='display: none;' onclick="sendMessage()">送出</button>
+        <input type="file" id="imageInput" style="display: none;">
+        <button id="uploadBtn">上傳圖片</button>
+      </div>
   </div>
-  </div>
+  <div id="settings" style="display: none;"></div>
+  
 </body>
 </html>
 
@@ -44,14 +48,21 @@
   const username = "{{ username }}";
   const socket = io();
   const userStyle = '{{ style | tojson }}';
+  const messageInput = document.getElementById('messageInput');
+  const chatArea = document.getElementById('chat-area');
   let currentRoom = "";
   document.addEventListener('click', () => {
     document.querySelectorAll('.room-options').forEach(opt => opt.style.display = 'none');
   });
 
+  // 上傳圖片按鈕
+  document.getElementById('uploadBtn').addEventListener('click', () => {
+    document.getElementById('imageInput').click();
+  });
   // Enter鍵送出訊息
   document.addEventListener('keydown', function(event) {
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault(); // 阻止預設換行行為
       sendMessage();
     }
   })
@@ -100,30 +111,31 @@
 
     socket.on('message', function(data) {
       const m = document.createElement('div');
-      let content = data.msg;
+      m.classList.add('message');
+
+      // 左側：使用者名稱與時間（獨立一行）
+      const header = document.createElement('div');
+      header.classList.add('message-header');
+      header.innerHTML = `<b>${escapeHTML(data.user)}</b> (${data.timestamp}):`;
+
+      // 右側：訊息本體
+      const body = document.createElement('div');
+      body.classList.add('message-body');
+
       if (data.image) {
-        content = `<img src="${escapeHTML(data.image)}" style="max-width: 200px; max-height: 200px;">`;
+        const img = document.createElement('img');
+        img.src = escapeHTML(data.image);
+        img.style.maxWidth = '200px';
+        img.style.maxHeight = '200px';
+        body.appendChild(img);
       } else {
-        content = escapeHTML(data.msg);
-      }
-      m.innerHTML = `<b>${escapeHTML(data.user)}</b> (${data.timestamp}): ${content}`;
-      messages.appendChild(m);
-      messages.scrollTop = messages.scrollHeight;
-
-      // 頁面可見時閃爍標題
-      if (document.visibilityState === 'visible') {
-        originalTitle = document.title;  // 更新原始標題
-        // startBlink();
+        body.innerText = data.msg; // 多行文字，自動保留換行
       }
 
-      // 頁面不可見時顯示桌面通知
-      if (document.visibilityState !== 'visible' && Notification.permission === 'granted') {
-        const notificationBody = data.image ? '收到一張圖片' : data.msg;
-        new Notification(`新訊息來自 ${data.user}`, {
-          body: notificationBody,
-          icon: '/static/notification-icon.png'
-        });
-      }
+      m.appendChild(header);
+      m.appendChild(body);
+      chatArea.appendChild(m);
+      chatArea.scrollTop = chatArea.scrollHeight;
     });
 
     function enableNotifications() {
@@ -153,7 +165,7 @@
     // 加入房間
     function joinRoom(room) {
       currentRoom = room;
-      messages.innerHTML = '';
+      chatArea.innerHTML = '';
       socket.emit('join_room', { room });
       
       //clearActiveStatus();
@@ -162,18 +174,13 @@
       if (roomLi) roomLi.classList.add('active');
     }
 
-    // 傳送訊息
-    function sendMessage() {
-      const msg = document.getElementById('message').value;
-      if (!msg) return;
-      socket.emit('send_message', { room: currentRoom, msg });
-      document.getElementById('message').value = '';
-    }
-
     function showSettings() {
       fetch('/setting')
         .then(res => res.text())
         .then(html => {
+          // document.getElementById('settings').innerHTML = html;
+          // document.getElementById('chat').style.display = 'none';
+          // document.getElementById('settings').style.display = 'block';
           document.getElementById('chat').innerHTML = html;
           initSettings();
         });
@@ -301,16 +308,82 @@
       if (target) target.classList.add('active');
       
     }
-    function sendMessage() {
-      const msgInput = document.getElementById('message');
-      const imageInput = document.getElementById('imageInput');
-      const msg = msgInput.value.trim();
-      const file = imageInput.files[0];
+    let pastedImageFile = null;
 
-      // 傳送圖片（優先）
-      if (file) {
+  document.getElementById('messageInput').addEventListener('paste', function (e) {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf("image") !== -1) {
+        const file = item.getAsFile();
+        const reader = new FileReader();
+        reader.onload = function (event) {
+          const img = document.createElement('img');
+          img.src = event.target.result;
+          img.style.maxWidth = '200px';
+          img.style.maxHeight = '200px';
+          img.contentEditable = true;
+
+          const selection = window.getSelection();
+          if (!selection.rangeCount) return;
+          const range = selection.getRangeAt(0);
+          range.deleteContents();
+          range.insertNode(img);
+
+          // 在圖片後面插入空格游標
+          range.setStartAfter(img);
+          range.setEndAfter(img);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        };
+        reader.readAsDataURL(file);
+        e.preventDefault();
+      }
+    }
+  });
+
+function sendMessage() {
+  const inputDiv = document.getElementById('messageInput');
+  const nodes = Array.from(inputDiv.childNodes);
+
+  // 遞送內容的順序
+  function processNode(index) {
+    if (index >= nodes.length) {
+      inputDiv.innerHTML = '';
+      return;
+    }
+
+    const node = nodes[index];
+
+    if (node.nodeType === Node.TEXT_NODE ) {
+      const text = node.textContent.trim();
+      if (text) {
+        socket.emit('send_message', {
+          room: currentRoom,
+          msg: text
+        });
+      }
+      processNode(index + 1); // 繼續處理下一個節點
+    }
+    else if(node.nodeType === Node.ELEMENT_NODE){
+        // 其他標籤（div, pre, span, br, strong...）— 取出其文字內容
+        const text = node.innerText || node.textContent || '';
+        const trimmed = text.trim();
+        if (trimmed) {
+          socket.emit('send_message', {
+            room: currentRoom,
+            msg: trimmed
+          });
+        }
+        processNode(index + 1); // 繼續處理下一個節點
+    }
+    
+    else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'IMG') {
+      const img = node;
+      if (img.src.startsWith('data:image/')) {
+        const blob = dataURLtoBlob(img.src);
         const formData = new FormData();
-        formData.append('image', file);
+        formData.append('image', blob, 'pasted.png');
 
         fetch('/upload_image', {
           method: 'POST',
@@ -319,21 +392,35 @@
           if (data.success) {
             socket.emit('send_message', {
               room: currentRoom,
-              msg: '',  // 文字留空
-              image: data.url  // 圖片網址
+              msg: '',
+              image: data.url
             });
-            imageInput.value = ''; // 清空檔案欄位
-          } else {
-            alert(data.message);
           }
+          processNode(index + 1); // 等圖片上傳完才處理下一個
         });
+      } else {
+        processNode(index + 1);
       }
+    }
 
-      // 傳送文字
-      if (msg) {
-        socket.emit('send_message', { room: currentRoom, msg });
-        msgInput.value = '';
+    else {
+      // 忽略其他元素
+      processNode(index + 1);
+    }
+  }
+
+  processNode(0); // 從第一個開始遞送
+}
+    function dataURLtoBlob(dataurl) {
+      const arr = dataurl.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
       }
+      return new Blob([u8arr], { type: mime });
     }
     function escapeHTML(str) {
       const div = document.createElement('div');
