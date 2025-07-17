@@ -9,9 +9,9 @@
 </head>
 <body>
   <div class="chat-background"></div>
-  <div class="chat-container"></div>
+  <div class="chat-container">
   <div id="sidebar">
-    <h3>聊天室</h3>
+    <h3 style="color: var(--font-color)">聊天室</h3>
     <div>
       <input type="text" id="newRoomName" placeholder="新聊天室名稱">
       <button onclick="createGroup()">建立</button>
@@ -27,9 +27,14 @@
         </div>
     </div>
   </div>
-    <div id="chat">
-      <div id="chat-area"></div>
-      <div id="input">
+    <div id="chat" class="main-panel">
+      <div id="chat-area">        
+        <div id="chat-welcome" style="text-align:center; color:#888; padding: 40px 0;">
+          歡迎來到網頁聊天室
+        </div>
+      </div>
+
+      <div id="input" style="display: none;">
         <div id="messageInput" contenteditable="true"></div>
         <div id="previewImageContainer"></div>
         <button style='display: none;' onclick="sendMessage()">送出</button>
@@ -37,8 +42,8 @@
         <button id="uploadBtn">上傳圖片</button>
       </div>
   </div>
-  <div id="settings" style="display: none;"></div>
-  
+  <div id="settings" class="main-panel" style="display: none;"></div>
+  </div>
 </body>
 </html>
 
@@ -59,6 +64,31 @@
   document.getElementById('uploadBtn').addEventListener('click', () => {
     document.getElementById('imageInput').click();
   });
+
+  // 上傳圖片功能
+  document.getElementById('imageInput').addEventListener('change', function (e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    fetch('/upload_image', {
+      method: 'POST',
+      body: formData
+    }).then(res => res.json()).then(data => {
+      if (data.success) {
+        socket.emit('send_message', {
+          room: currentRoom,
+          msg: '',
+          image: data.url
+        });
+      } else {
+        alert(data.message || '圖片上傳失敗');
+      }
+    }).catch(() => alert('圖片上傳錯誤'));
+  });
   // Enter鍵送出訊息
   document.addEventListener('keydown', function(event) {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -76,18 +106,19 @@
     // 在線用戶更新
     socket.on('update_users', function(users) {
       onlineUsers.innerHTML = '';
-      users.forEach(user => {
-        const li = document.createElement('li');
-        li.textContent = user;
-        li.onclick = () => {
-          if (user === username) return; // 跳過自己
-          const room = privateRoomName(username, user);
-          clearActiveStatus();
-          setActiveUser(user);
-          joinRoom(room);
-        };
-        onlineUsers.appendChild(li);
-      });
+      users
+        .filter(user => user !== username) // ✅ 排除自己
+        .forEach(user => {
+          const li = document.createElement('li');
+          li.textContent = user;
+          li.onclick = () => {
+            const room = privateRoomName(username, user);
+            clearActiveStatus();
+            setActiveUser(user);
+            joinRoom(room);
+          };
+          onlineUsers.appendChild(li);
+        });
     });
 
     // 訊息顯示
@@ -125,8 +156,8 @@
       if (data.image) {
         const img = document.createElement('img');
         img.src = escapeHTML(data.image);
-        img.style.maxWidth = '200px';
-        img.style.maxHeight = '200px';
+        img.style.maxWidth = '500px';
+        img.style.maxHeight = '500px';
         body.appendChild(img);
       } else {
         body.innerText = data.msg; // 多行文字，自動保留換行
@@ -163,25 +194,43 @@
     }
 
     // 加入房間
+    // function joinRoom(room) {
+    //   currentRoom = room;
+    //   chatArea.innerHTML = '';
+    //   socket.emit('join_room', { room });
+      
+    //   //clearActiveStatus();
+
+    //   const roomLi = groupList.querySelector(`li[data-room="${room}"]`);
+    //   if (roomLi) roomLi.classList.add('active');
+    // }
     function joinRoom(room) {
       currentRoom = room;
-      chatArea.innerHTML = '';
-      socket.emit('join_room', { room });
-      
-      //clearActiveStatus();
 
+      // 清除歡迎畫面
+      const welcome = document.getElementById('chat-welcome');
+      if (welcome) welcome.remove();
+
+      // 顯示輸入區塊
+      document.getElementById('input').style.display = 'flex';
+
+      // 清空訊息區
+      chatArea.innerHTML = '';
+
+      // 加入 Socket 房間
+      socket.emit('join_room', { room });
+
+      // 標記聊天室為 active
       const roomLi = groupList.querySelector(`li[data-room="${room}"]`);
       if (roomLi) roomLi.classList.add('active');
     }
-
     function showSettings() {
       fetch('/setting')
         .then(res => res.text())
         .then(html => {
-          // document.getElementById('settings').innerHTML = html;
-          // document.getElementById('chat').style.display = 'none';
-          // document.getElementById('settings').style.display = 'block';
-          document.getElementById('chat').innerHTML = html;
+          document.getElementById('settings').innerHTML = html;
+          document.getElementById('chat').style.display = 'none';
+          document.getElementById('settings').style.display = 'block';
           initSettings();
         });
     }
@@ -202,12 +251,11 @@
     li.style.padding = '4px 8px';
 
     li.innerHTML = `
-      <span class="room-name">${name}</span>
-      <button class="room-menu-btn" onclick="toggleRoomOptions(event, this)">⋮</button>
+      <span class="room-name" style="color: var(--font-color)">${name}</span>
+      <button class="room-menu-btn" style="color: #ffffff" onclick="toggleRoomOptions(event, this)">⋮</button>
       <div class="room-options" style="display:none; position: absolute; right: 0; top: 100%; background: white; border: 1px solid #ccc; z-index: 10;">
-        <button onclick="renameRoom(this, '${name}')">重新命名聊天室</button>
-        <button onclick="deleteRoom('${name}')">刪除聊天室</button>
-        
+        <button style="color: var(--font-color)" onclick="renameRoom(this, '${name}')">重新命名聊天室</button>
+        <button style="color: var(--font-color)" onclick="deleteRoom('${name}')">刪除聊天室</button>
       </div>
     `;
 
@@ -365,18 +413,18 @@ function sendMessage() {
       }
       processNode(index + 1); // 繼續處理下一個節點
     }
-    else if(node.nodeType === Node.ELEMENT_NODE){
-        // 其他標籤（div, pre, span, br, strong...）— 取出其文字內容
-        const text = node.innerText || node.textContent || '';
-        const trimmed = text.trim();
-        if (trimmed) {
-          socket.emit('send_message', {
-            room: currentRoom,
-            msg: trimmed
-          });
-        }
-        processNode(index + 1); // 繼續處理下一個節點
-    }
+    // else if(node.nodeType === Node.ELEMENT_NODE){
+    //     // 其他標籤（div, pre, span, br, strong...）— 取出其文字內容
+    //     const text = node.innerText || node.textContent || '';
+    //     const trimmed = text.trim();
+    //     if (trimmed) {
+    //       socket.emit('send_message', {
+    //         room: currentRoom,
+    //         msg: trimmed
+    //       });
+    //     }
+    //     processNode(index + 1); // 繼續處理下一個節點
+    // }
     
     else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'IMG') {
       const img = node;
@@ -443,6 +491,7 @@ function sendMessage() {
       if (settings.fontColor) {
         document.documentElement.style.setProperty('--font-color', settings.fontColor);
       }
+      updateSidebarColor(settings.bgColor || '#ffffff');
     })();
   function applyUserStyle(style) {
     if(style.custom_bg && style.custom_bg !== ''){

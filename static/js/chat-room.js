@@ -66,6 +66,9 @@ function updateUI(settings) {
     // 字體
     document.querySelector('.font-color-picker').value = settings.fontColor || '#2c3e50';
     document.documentElement.style.setProperty('--font-color', settings.fontColor || '#2c3e50');
+
+    // sidebar
+    updateSidebarColor(settings.bgColor || '#ffffff');
 }
 
 function updateBlurValue(e) {
@@ -138,4 +141,26 @@ function applySettings() {
 function backToChat() {
   document.getElementById('settings').style.display = 'none';
   document.getElementById('chat').style.display = 'block';
+}
+
+
+function getBrightness(hexColor) {
+    // 將 HEX 轉為 RGB
+    const rgb = hexColor.replace('#', '').match(/.{2}/g).map(x => parseInt(x, 16));
+    // YIQ 亮度算法
+    return (rgb[0]*299 + rgb[1]*587 + rgb[2]*114) / 1000;
+}
+
+function updateSidebarColor(bgColor) {
+    const sidebar = document.getElementById('sidebar');
+    const brightness = getBrightness(bgColor);
+    if (brightness > 128) {
+        // 背景太亮，sidebar 用深色
+        sidebar.style.backgroundColor = '#2c3e50';
+        sidebar.style.color = '#ecf0f1';
+    } else {
+        // 背景較暗，sidebar 用淺色
+        sidebar.style.backgroundColor = '#ecf0f1';
+        sidebar.style.color = '#2c3e50';
+    }
 }
