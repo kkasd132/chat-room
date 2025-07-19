@@ -10,7 +10,7 @@ function initSettings() {
     // 背景類型
     if(settings.bgType === 'image') {
         document.getElementById('bg-image').checked = true;
-        document.querySelector('.image-preview').style.backgroundImage = `url(${settings.bgImage})`;
+        document.querySelector('.image-preview').style.backgroundImage = `url(${settings.custom_bg})`;
     } else {
         document.getElementById('bg-color').checked = true;
         document.querySelector('.color-picker').value = settings.bgColor || '#ffffff';
@@ -99,7 +99,7 @@ function handleImageUpload(e) {
     if (!file) return;
 
     const formData = new FormData();
-    formData.append('image', file);
+    formData.append('file', file);
 
     fetch('/upload_bg_image', {
         method: 'POST',

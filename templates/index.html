@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8">
   <link rel="stylesheet" href="/static/css/chat-room.css">
+  <link rel="stylesheet" href="/static/css/font-awesome.all.min.css">
   <title>網頁聊天室</title>
   
 </head>
@@ -38,12 +39,17 @@
         <div id="messageInput" contenteditable="true"></div>
         <div id="previewImageContainer"></div>
         <button style='display: none;' onclick="sendMessage()">送出</button>
-        <input type="file" id="imageInput" style="display: none;">
-        <button id="uploadBtn">上傳圖片</button>
+        <input type="file" id="fileInput" style="display: none;">
+        <button id="uploadBtn">上傳檔案</button>
       </div>
   </div>
   <div id="settings" class="main-panel" style="display: none;"></div>
   </div>
+  <!-- 圖片放大遮罩 -->
+<div id="imageModal" style="display: none; position: fixed; z-index: 1000; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0, 0, 0, 0.8); justify-content: center; align-items: center;">
+  <img id="modalImage" style="max-width: 90%; max-height: 90%;">
+</div>
 </body>
 </html>
 
@@ -55,39 +61,80 @@
   const userStyle = '{{ style | tojson }}';
   const messageInput = document.getElementById('messageInput');
   const chatArea = document.getElementById('chat-area');
+  const modal = document.getElementById('imageModal');
+  const modalImg = document.getElementById('modalImage');
   let currentRoom = "";
   document.addEventListener('click', () => {
     document.querySelectorAll('.room-options').forEach(opt => opt.style.display = 'none');
   });
 
-  // 上傳圖片按鈕
+  // 上傳檔案按鈕
   document.getElementById('uploadBtn').addEventListener('click', () => {
-    document.getElementById('imageInput').click();
+    document.getElementById('fileInput').click();
   });
 
-  // 上傳圖片功能
-  document.getElementById('imageInput').addEventListener('change', function (e) {
-    const file = e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
+  // 上傳檔案功能
+  document.getElementById('fileInput').addEventListener('change', function (e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
 
-    const formData = new FormData();
-    formData.append('image', file);
+  const formData = new FormData();
+  formData.append('file', file);
 
-    fetch('/upload_image', {
-      method: 'POST',
-      body: formData
-    }).then(res => res.json()).then(data => {
-      if (data.success) {
-        socket.emit('send_message', {
-          room: currentRoom,
-          msg: '',
-          image: data.url
-        });
-      } else {
-        alert(data.message || '圖片上傳失敗');
-      }
-    }).catch(() => alert('圖片上傳錯誤'));
+  fetch('/upload_file', {
+    method: 'POST',
+    body: formData
+  }).then(res => res.json()).then(data => {
+    if (data.success) {
+      socket.emit('send_message', {
+        room: currentRoom,
+        msg: '',
+        file: data.file_url,
+        filename: data.filename,
+        mimetype: data.mimetype
+      });
+    } else {
+      alert(data.message || '檔案上傳失敗');
+    }
+  }).catch(() => alert('檔案上傳錯誤'));
+});
+
+  // 放大圖片功能
+  let scale = 1;      // 縮放比例初始值
+  const scaleStep = 0.1;  // 每次滾輪放大縮小的倍率
+
+  // 點擊聊天室內圖片，開啟放大視窗
+  chatArea.addEventListener('click', function (e) {
+    if (e.target.tagName === 'IMG' && e.target.closest('.message-body')) {
+      scale = 1;  // 重置縮放比例
+      modalImg.style.transform = `scale(${scale})`;
+      modalImg.style.cursor = 'grab';
+      modalImg.style.transition = 'transform 0.1s ease';
+      
+      modalImg.src = e.target.src;
+      modal.style.display = 'flex';
+    }
+  });
+
+  // 點擊遮罩關閉放大圖片視窗
+  modal.addEventListener('click', function () {
+    modal.style.display = 'none';
+  });
+
+  // 滾輪控制縮放
+  modalImg.addEventListener('wheel', function (e) {
+    e.preventDefault();
+
+    if (e.deltaY < 0) {
+      // 滾輪向上，放大
+      scale += scaleStep;
+    } else {
+      // 滾輪向下，縮小（最小到 0.5）
+      scale = Math.max(scaleStep, scale - scaleStep);
+    }
+
+    modalImg.style.transform = `scale(${scale})`;
   });
   // Enter鍵送出訊息
   document.addEventListener('keydown', function(event) {
@@ -139,28 +186,64 @@
         clearInterval(blinkInterval);
       }
     });
-
     socket.on('message', function(data) {
       const m = document.createElement('div');
       m.classList.add('message');
 
-      // 左側：使用者名稱與時間（獨立一行）
       const header = document.createElement('div');
       header.classList.add('message-header');
       header.innerHTML = `<b>${escapeHTML(data.user)}</b> (${data.timestamp}):`;
 
-      // 右側：訊息本體
       const body = document.createElement('div');
       body.classList.add('message-body');
 
-      if (data.image) {
-        const img = document.createElement('img');
-        img.src = escapeHTML(data.image);
-        img.style.maxWidth = '500px';
-        img.style.maxHeight = '500px';
-        body.appendChild(img);
+      if (data.file) {
+        if (data.mimetype && data.mimetype.startsWith('image/')) {
+          const img = document.createElement('img');
+          img.src = escapeHTML(data.file);
+          img.style.maxWidth = '500px';
+          img.style.maxHeight = '500px';
+          body.appendChild(img);
+        } else {
+          // 對應副檔名 => Font Awesome 圖示 class
+          const ext = data.filename.split('.').pop().toLowerCase();
+          const iconClassMap = {
+            'zip': 'fa-file-zipper',
+            'rar': 'fa-file-zipper',
+            'pdf': 'fa-file-pdf',
+            'doc': 'fa-file-word',
+            'docx': 'fa-file-word',
+            'txt': 'fa-file-lines',
+            'ppt': 'fa-file-powerpoint',
+            'pptx': 'fa-file-powerpoint',
+            'xls': 'fa-file-excel',
+            'xlsx': 'fa-file-excel',
+            'mp3': 'fa-file-audio',
+            'wav': 'fa-file-audio',
+            'mp4': 'fa-file-video',
+            'mov': 'fa-file-video',
+            'apk': 'fa-mobile',
+            'exe': 'fa-file',
+            'default': 'fa-paperclip'
+          };
+
+          const iconClass = iconClassMap[ext] || iconClassMap['default'];
+
+          const icon = document.createElement('i');
+          icon.className = `fa-solid ${iconClass}`;
+          icon.style.marginRight = '8px';
+
+          const a = document.createElement('a');
+          a.href = escapeHTML(data.file);
+          a.download = data.filename;
+          a.textContent = `下載檔案：${data.filename}`;
+          a.target = '_blank';
+
+          body.appendChild(icon);
+          body.appendChild(a);
+        }
       } else {
-        body.innerText = data.msg; // 多行文字，自動保留換行
+        body.innerText = data.msg;
       }
 
       m.appendChild(header);
@@ -431,9 +514,9 @@ function sendMessage() {
       if (img.src.startsWith('data:image/')) {
         const blob = dataURLtoBlob(img.src);
         const formData = new FormData();
-        formData.append('image', blob, 'pasted.png');
+        formData.append('file', blob, 'pasted.png');
 
-        fetch('/upload_image', {
+        fetch('/upload_file', {
           method: 'POST',
           body: formData
         }).then(res => res.json()).then(data => {
@@ -441,7 +524,9 @@ function sendMessage() {
             socket.emit('send_message', {
               room: currentRoom,
               msg: '',
-              image: data.url
+              file: data.file_url,
+              filename: data.filename,
+              mimetype: data.mimetype
             });
           }
           processNode(index + 1); // 等圖片上傳完才處理下一個

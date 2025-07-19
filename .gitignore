@@ -1,4 +1,7 @@
+build
+dist
 instance/*.db
 uploads
+venv
 *.db
-
+__pycache__

@@ -43,6 +43,14 @@ body {
   border-radius: 6px;
 }
 
+.message-body i {
+  font-size: 35px;
+  color:var(--font-color);;
+}
+.message-body img {
+  cursor: zoom-in;
+  transition: transform 0.3s ease;
+}
 /* 輸入欄位區塊 */
 #form {
   display: flex;

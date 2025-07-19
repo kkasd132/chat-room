@@ -7,9 +7,12 @@ import os
 from werkzeug.utils import secure_filename
 import uuid
 from datetime import datetime
+from engineio.async_drivers import gevent # 這個非常重要，沒加這個會導致pyinstaller打包的程式無法執行，顯示ValueError: Invalid async_mode specified
+
 UPLOAD_FOLDER = 'static/uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-app = Flask(__name__)
+ALLOWED_EXTENSIONS = set(['png', 'jpg', 'jpeg', 'gif', 'zip', 'rar', 'pdf', 'txt', 'docx'])
+
+app = Flask(__name__, static_folder='static', template_folder='templates')
 app.secret_key = 'secret-key'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db'
 db = SQLAlchemy(app)
@@ -49,7 +52,9 @@ class Message(db.Model):
     room = db.Column(db.String(100))
     username = db.Column(db.String(100))
     msg = db.Column(db.String(500))
-    image = db.Column(db.String(500))  # 新增圖片網址欄位
+    file = db.Column(db.String(500))
+    filename = db.Column(db.String(300))
+    mimetype = db.Column(db.String(100))
     timestamp = db.Column(db.DateTime, default=datetime.now)
 
 @app.route('/')
@@ -58,6 +63,11 @@ def index():
         return redirect("/login")
 
     user = User.query.filter_by(username=session['username']).first()
+    if not user:
+        # 若 session 有 username 但找不到對應帳號，可能是資料庫被清除或使用者資料遺失
+        session.pop('username', None)
+        return redirect("/login")
+    
     setting = UserSetting.query.filter_by(user_id=user.id).first()
 
     style = {
@@ -154,44 +164,81 @@ def rename_room():
     db.session.commit()
     return jsonify(success=True)
 
+# @app.route('/delete_room', methods=['POST'])
+# def delete_room():
+#     data = request.json
+#     name = data.get('name')
+#     if not name:
+#         return jsonify(success=False, message='聊天室名稱缺失')
+
+#     # 確認聊天室是否存在
+#     room = Room.query.filter_by(name=name).first()
+#     if not room:
+#         return jsonify(success=False, message='聊天室不存在')
+
+#     # 刪除聊天室相關訊息
+#     Message.query.filter_by(room=name).delete()
+#     db.session.delete(room)
+#     db.session.commit()
+
+#     return jsonify(success=True)
+
 @app.route('/delete_room', methods=['POST'])
 def delete_room():
-    data = request.json
-    name = data.get('name')
-    if not name:
-        return jsonify(success=False, message='聊天室名稱缺失')
+    data = request.get_json()
+    room_name = data.get('name')
+    if not room_name:
+        return {'success': False, 'message': '聊天室名稱缺失'}, 400
 
-    # 確認聊天室是否存在
-    room = Room.query.filter_by(name=name).first()
-    if not room:
-        return jsonify(success=False, message='聊天室不存在')
+    # 取得聊天室的所有訊息（假設Message有room欄位與file_url欄位）
+    messages = Message.query.filter_by(room=room_name).all()
 
-    # 刪除聊天室相關訊息
-    Message.query.filter_by(room=name).delete()
-    db.session.delete(room)
+    # 圖片檔案根目錄，依你設定調整
+    upload_folder = app.config['UPLOAD_FOLDER']  # e.g. './uploads/'
+
+    for msg in messages:
+        if msg.file:
+            # 從url取得圖片檔名（假設是 /uploads/xxx.jpg）
+            filename = os.path.basename(msg.file)
+            filepath = os.path.join(upload_folder, filename)
+            try:
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                    app.logger.info(f"刪除圖片檔案: {filepath}")
+            except Exception as e:
+                app.logger.error(f"刪除圖片檔案失敗: {filepath}, 錯誤: {e}")
+
+    # 刪除訊息資料
+    Message.query.filter_by(room=room_name).delete()
+
+    # 刪除聊天室資料（假設有Room模型）
+    Room.query.filter_by(name=room_name).delete()
+
     db.session.commit()
 
-    return jsonify(success=True)
+    return {'success': True, 'message': '聊天室與圖片刪除成功'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/upload_image', methods=['POST'])
-def upload_image():
-    file = request.files.get('image')
+@app.route('/upload_file', methods=['POST'])
+def upload_file():
+    file = request.files.get('file')
     if not file or file.filename == '':
         return jsonify(success=False, message="No selected file")
     if file and allowed_file(file.filename):
         timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
         ext = os.path.splitext(file.filename)[1]
         username = session.get('username', 'anonymous')
-        unique_name = f"{username}_{timestamp}_{uuid.uuid4().hex}{ext}"
+        unique_name = f"{uuid.uuid4().hex}{ext}"
         safe_name = secure_filename(unique_name)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], safe_name)
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         file.save(filepath)
-        return jsonify(success=True, url=f"/static/uploads/{safe_name}")
-    return jsonify(success=False, message="Invalid file type")
+        return jsonify(success=True, file_url=f"/static/uploads/{safe_name}",
+                       filename=safe_name,
+                       mimetype=file.mimetype)
+    return jsonify(success=False, message=f"無效的檔案類型，目前限定：{', '.join(ext.upper() for ext in ALLOWED_EXTENSIONS)}")
 @app.route('/save_settings', methods=['POST'])
 def save_settings():
     if "username" not in session:
@@ -200,7 +247,7 @@ def save_settings():
     user = User.query.filter_by(username=session['username']).first()
     setting = UserSetting.query.filter_by(user_id=user.id).first()
     data = request.json
-    print(f'data:{data}')
+    # print(f'data:{data}')
     if not setting:
         setting = UserSetting(user_id=user.id)
 
@@ -214,26 +261,36 @@ def save_settings():
     return jsonify(success=True)
 
 @app.route('/upload_bg_image', methods=['POST'])
-def upload_bg_image():
-    if 'image' not in request.files:
-        return jsonify(success=False, message="No image part")
+def upload_bg_file():
+    allow_image_extensions = {'png', 'jpg', 'jpeg', 'gif'}
 
-    file = request.files['image']
+    if 'file' not in request.files:
+        return jsonify(success=False, message="No file part")
+
+    file = request.files['file']
     if file.filename == '':
         return jsonify(success=False, message="No selected file")
-
-    if file and allowed_file(file.filename):
+    
+    if not file.mimetype.startswith('image/'):
+        return jsonify(success=False, message="Uploaded file is not a valid image")
+    ext = file.filename.rsplit('.', 1)[-1].lower()
+    if file and '.' in file.filename and ext in allow_image_extensions:
         user = User.query.filter_by(username=session['username']).first()
-        ext = file.filename.rsplit('.', 1)[1].lower()
         filename = f"user_{user.id}.{ext}"
         folder = os.path.join(app.static_folder, 'uploads', 'user_bg')
         os.makedirs(folder, exist_ok=True)
         filepath = os.path.join(folder, filename)
         file.save(filepath)
 
+        # 刪除之前上傳的背景圖片
+        for existing_ext in allow_image_extensions:
+            old_filename = f"user_{user.id}.{existing_ext}"
+            old_filepath = os.path.join(folder, old_filename)
+            if os.path.exists(old_filepath):
+                os.remove(old_filepath)
         return jsonify(success=True, url=f"/static/uploads/user_bg/{filename}")
 
-    return jsonify(success=False, message="Invalid file type")
+    return jsonify(success=False, message=f"Invalid file type. Allowed types: {', '.join(allow_image_extensions)}")
 
 @socketio.on('connect')
 def connect():
@@ -282,7 +339,9 @@ def handle_join(data):
         emit('message', {
             'user': m.username,
             'msg': m.msg,
-            'image': m.image,
+            'file': m.file,
+            'filename': m.filename,
+            'mimetype': m.mimetype,
             'room': m.room,
             'timestamp': m.timestamp.strftime('%H:%M')
         })
@@ -292,15 +351,21 @@ def handle_join(data):
 def handle_send(data):
     room = data['room']
     msg = data.get('msg', '')
-    image = data.get('image', '')
+    file = data.get('file', '')
     username = session['username']
-    m = Message(room=room, username=username, msg=msg, image=image)
+    filename = data.get('filename')
+    mimetype = data.get('mimetype')
+
+    m = Message(room=room, username=username, msg=msg, file=file, filename=filename, mimetype=mimetype)
     db.session.add(m)
     db.session.commit()
+    
     emit('message', {
         'user': username,
         'msg': msg,
-        'image': image,
+        'file': file,
+        'filename': filename,
+        'mimetype': mimetype,
         'room': room,
         'timestamp': m.timestamp.strftime('%H:%M')
     }, room=room)
