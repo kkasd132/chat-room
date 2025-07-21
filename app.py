@@ -164,25 +164,6 @@ def rename_room():
     db.session.commit()
     return jsonify(success=True)
 
-# @app.route('/delete_room', methods=['POST'])
-# def delete_room():
-#     data = request.json
-#     name = data.get('name')
-#     if not name:
-#         return jsonify(success=False, message='聊天室名稱缺失')
-
-#     # 確認聊天室是否存在
-#     room = Room.query.filter_by(name=name).first()
-#     if not room:
-#         return jsonify(success=False, message='聊天室不存在')
-
-#     # 刪除聊天室相關訊息
-#     Message.query.filter_by(room=name).delete()
-#     db.session.delete(room)
-#     db.session.commit()
-
-#     return jsonify(success=True)
-
 @app.route('/delete_room', methods=['POST'])
 def delete_room():
     data = request.get_json()

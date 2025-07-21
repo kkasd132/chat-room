@@ -17,13 +17,14 @@
       <input type="text" id="newRoomName" placeholder="新聊天室名稱">
       <button onclick="createGroup()">建立</button>
     </div>
-    <ul id="groupList"></ul>
+    <ul style="display: inline;" id="groupList"></ul>
     <h4>在線用戶</h4>
-    <ul id="onlineUsers"></ul>
+    <ul style="display: inline;" id="onlineUsers"></ul>
     <div class="user-panel">
         <p>歡迎，{{ username }}</p>
         <div class="user-controls">
             <a href="/logout" class="control-btn">登出</a>
+            <button onclick="new Notification('🔔 這是通知範例')">測試通知</button>
             <button class="control-btn" onclick="showSettings()">⚙️ 進階設定</button>
         </div>
     </div>
@@ -55,6 +56,7 @@
 
 <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat-room.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sweetalert2.js') }}"></script>
 <script>
   const username = "{{ username }}";
   const socket = io();
@@ -63,7 +65,11 @@
   const chatArea = document.getElementById('chat-area');
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImage');
+  const roomNotificationSettings = {};
   let currentRoom = "";
+
+  window.addEventListener('load', showEnableNotificationPrompt);
+
   document.addEventListener('click', () => {
     document.querySelectorAll('.room-options').forEach(opt => opt.style.display = 'none');
   });
@@ -95,10 +101,20 @@
         mimetype: data.mimetype
       });
     } else {
-      alert(data.message || '檔案上傳失敗');
+      Swal.fire({
+        icon: 'error',
+        title: '檔案上傳失敗',
+        text: '請稍後再試'
+      });
     }
-  }).catch(() => alert('檔案上傳錯誤'));
-});
+  }).catch(() => {
+      Swal.fire({
+        icon: 'error',
+        title: '網路錯誤',
+        text: '檔案上傳時發生錯誤，請檢查您的連線'
+      });
+    });
+  });
 
   // 放大圖片功能
   let scale = 1;      // 縮放比例初始值
@@ -153,17 +169,55 @@
     // 在線用戶更新
     socket.on('update_users', function(users) {
       onlineUsers.innerHTML = '';
+
       users
         .filter(user => user !== username) // ✅ 排除自己
         .forEach(user => {
+          const room = privateRoomName(username, user);
+          const isNotified = localStorage.getItem(`notify_${room}`) !== 'off';
+          const bellIcon = isNotified ? 'fa-bell' : 'fa-bell-slash';
+
           const li = document.createElement('li');
-          li.textContent = user;
-          li.onclick = () => {
-            const room = privateRoomName(username, user);
+          li.setAttribute('data-room', room);
+          li.style.display = 'flex';
+          li.style.alignItems = 'center';
+          li.style.padding = '4px 8px';
+
+          li.innerHTML = `
+            <i class="fa-solid ${bellIcon} notify-toggle"
+              title="切換通知"
+              style="cursor: pointer; color: var(--font-color); margin: 10px;"
+              data-room="${room}"></i>
+            <span class="private-name" style="cursor: default; color: var(--font-color);">
+              ${user}
+            </span>
+          `;
+
+          // 點擊私聊用戶名稱 → 進入私聊房間
+          li.addEventListener('click', (e) => {
+            if (e.target.classList.contains('notify-toggle')) return; // 點到鈴鐺不切換房間
             clearActiveStatus();
             setActiveUser(user);
             joinRoom(room);
-          };
+          });
+
+          // 點擊鈴鐺切換通知狀態
+          li.querySelector('.notify-toggle').addEventListener('click', (e) => {
+            const icon = e.target;
+            const room = icon.dataset.room;
+            const isOn = icon.classList.contains('fa-bell');
+
+            if (isOn) {
+              icon.classList.remove('fa-bell');
+              icon.classList.add('fa-bell-slash');
+              localStorage.setItem(`notify_${room}`, 'off');
+            } else {
+              icon.classList.remove('fa-bell-slash');
+              icon.classList.add('fa-bell');
+              localStorage.setItem(`notify_${room}`, 'on');
+            }
+          });
+
           onlineUsers.appendChild(li);
         });
     });
@@ -252,44 +306,73 @@
       chatArea.scrollTop = chatArea.scrollHeight;
     });
 
+    function showEnableNotificationPrompt() {
+      if (!('Notification' in window)) return;
+
+      if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+        Swal.fire({
+          title: '啟用聊天室通知？',
+          text: '允許通知後，即使切換分頁仍可收到新訊息提醒。',
+          icon: 'info',
+          showCancelButton: true,
+          confirmButtonText: '啟用',
+          cancelButtonText: '稍後',
+        }).then(result => {
+          if (result.isConfirmed) {
+            enableNotifications();
+          }
+        });
+      }
+    }
+
     function enableNotifications() {
       if (!('Notification' in window)) {
         alert('此瀏覽器不支援通知功能');
         return;
       }
       if (Notification.permission === 'granted') {
-        alert('通知功能已啟用');
+        Swal.fire({
+          icon: 'success',
+          title: '通知功能已啟用',
+          showConfirmButton: false,
+          timer: 1500
+        });
       } else if (Notification.permission !== 'denied') {
         Notification.requestPermission().then(permission => {
           if (permission === 'granted') {
-            alert('通知功能已啟用');
+            Swal.fire({
+              icon: 'success',
+              title: '通知功能已啟用',
+              showConfirmButton: false,
+              timer: 1500
+            });
           }
         });
       }
     }
-
+    function renameRoomInNotifySettings(oldName, newName) {
+      const status = localStorage.getItem(`notify_${oldName}`);
+      if (status !== null) {
+        localStorage.setItem(`notify_${newName}`, status);
+        localStorage.removeItem(`notify_${oldName}`);
+      }
+    }
+    function removeRoomFromNotifySettings(roomName) {
+      const settings = JSON.parse(localStorage.getItem(`notify_${roomName}`)) || {};
+      if (settings.hasOwnProperty(roomName)) {
+        delete settings[roomName];
+        localStorage.setItem(`notify_${roomName}`, JSON.stringify(settings));
+      }
+    }
     // 建立聊天室
     function createGroup() {
       const name = document.getElementById('newRoomName').value.trim();
-      if (!name) return alert("請輸入聊天室名稱");
+      if (!name) return  Swal.fire({icon: 'error',title: '建立聊天室失敗',text: '請輸入聊天室名稱',showConfirmButton: false,timer: 1500});
       document.getElementById('newRoomName').value = "";
       socket.emit('create_group', { name });
     }
 
-    // 加入房間
-    // function joinRoom(room) {
-    //   currentRoom = room;
-    //   chatArea.innerHTML = '';
-    //   socket.emit('join_room', { room });
-      
-    //   //clearActiveStatus();
-
-    //   const roomLi = groupList.querySelector(`li[data-room="${room}"]`);
-    //   if (roomLi) roomLi.classList.add('active');
-    // }
     function joinRoom(room) {
-      currentRoom = room;
-
       // 清除歡迎畫面
       const welcome = document.getElementById('chat-welcome');
       if (welcome) welcome.remove();
@@ -306,7 +389,13 @@
       // 標記聊天室為 active
       const roomLi = groupList.querySelector(`li[data-room="${room}"]`);
       if (roomLi) roomLi.classList.add('active');
+
+      // 如果該聊天室沒設定過，就預設開啟通知
+      if (!(room in roomNotificationSettings)) {
+        roomNotificationSettings[room] = true;
+      }
     }
+
     function showSettings() {
       fetch('/setting')
         .then(res => res.text())
@@ -332,9 +421,13 @@
     li.style.justifyContent = 'space-between';
     li.style.alignItems = 'center';
     li.style.padding = '4px 8px';
-
+    const isNotified = localStorage.getItem(`notify_${name}`) !== 'off';
+    const bellIcon = isNotified ? 'fa-bell' : 'fa-bell-slash';
     li.innerHTML = `
-      <span class="room-name" style="color: var(--font-color)">${name}</span>
+      <span style="display: flex; align-items: center; gap: 8px;">
+      <i class="fa-solid ${bellIcon} bell-toggle" title="通知開關" style="cursor: pointer; color: var(--font-color);"></i>
+      </span> 
+      <span class="room-name" style="color: var(--font-color); cursor: default;">${name}</span>
       <button class="room-menu-btn" style="color: #ffffff" onclick="toggleRoomOptions(event, this)">⋮</button>
       <div class="room-options" style="display:none; position: absolute; right: 0; top: 100%; background: white; border: 1px solid #ccc; z-index: 10;">
         <button style="color: var(--font-color)" onclick="renameRoom(this, '${name}')">重新命名聊天室</button>
@@ -342,19 +435,32 @@
       </div>
     `;
 
-    // li.addEventListener('click', (e) => {
-    //   if (e.target.closest('.room-menu-btn') || e.target.closest('.room-options')) return;
-    //   clearActiveStatus();
-    //   li.classList.add('active');
-    //   joinRoom(name);
-    // });
     li.addEventListener('click', (e) => {
-  if (e.target.closest('.room-menu-btn') || e.target.closest('.room-options')) return;
-  clearActiveStatus();
-  li.classList.add('active');
-  const roomName = li.dataset.room;  // ← 這裡改成讀取目前屬性
-  joinRoom(roomName);
-});
+      if (e.target.closest('.room-menu-btn') || e.target.closest('.room-options')) return;
+      clearActiveStatus();
+      li.classList.add('active');
+      const roomName = li.dataset.room;  // ← 這裡改成讀取目前屬性
+      joinRoom(roomName);
+    });
+
+    // 點擊鈴鐺切換通知狀態
+    li.querySelector('.bell-toggle').addEventListener('click', (e) => {
+      e.stopPropagation();  // 避免觸發父元素的 click 事件
+      const icon = e.target;
+      const isNowOn = icon.classList.contains('fa-bell');
+      if (isNowOn) {
+        icon.classList.remove('fa-bell');
+        icon.classList.add('fa-bell-slash');
+        // 儲存通知狀態為關閉（例如 localStorage 或變數）
+        localStorage.setItem(`notify_${name}`, 'off');
+      } else {
+        icon.classList.remove('fa-bell-slash');
+        icon.classList.add('fa-bell');
+        // 儲存通知狀態為開啟
+        localStorage.setItem(`notify_${name}`, 'on');
+      }
+    });
+
     document.getElementById('groupList').appendChild(li);
   }
 
@@ -396,50 +502,79 @@
           currentRoom = newName;
           joinRoom(newName);
         }
-
-        alert("聊天室名稱已更新");
+        renameRoomInNotifySettings(oldName, newName);
+        const optionsDiv = li.querySelector('.room-options');
+        const buttons = optionsDiv.querySelectorAll('button');
+        buttons.forEach(btn => {
+          if (btn.textContent.includes('重新命名')) {
+            btn.setAttribute('onclick', `renameRoom(this, '${newName}')`);
+          } else if (btn.textContent.includes('刪除')) {
+            btn.setAttribute('onclick', `deleteRoom('${newName}')`);
+          }
+        });
+        Swal.fire({
+          icon: 'success',
+          title: '聊天室名稱已更新',
+          showConfirmButton: false,
+          timer: 1500
+        });
       } else {
-        alert(data.message || "聊天室改名失敗");
+        Swal.fire({
+          icon: 'error',
+          title: '聊天室改名失敗',
+          text: '請稍後再試'
+        });
       }
     });
   }
-    function deleteRoom(name) {
-      if (!confirm(`確定要刪除聊天室 "${name}"？這將刪除所有訊息。`)) return;
+  function deleteRoom(name) {
+    if (!confirm(`確定要刪除聊天室 "${name}"？這將刪除所有訊息。`)) return;
 
-      fetch('/delete_room', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
-      }).then(res => res.json()).then(data => {
-        if (data.success) {
-          alert('聊天室已刪除');
+    fetch('/delete_room', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    }).then(res => res.json()).then(data => {
+      if (data.success) {
+        removeRoomFromNotifySettings(name);
+        Swal.fire({
+          icon: 'success',
+          title: `${name}聊天室已刪除`,
+          showConfirmButton: false,
+          timer: 1500
+        }).then(() => {
           location.reload();
-        } else {
-          alert(data.message || '刪除失敗');
-        }
-      });
-    }
-
-    // 新聊天室通知
-    socket.on('group_created', function(data) {
-      addRoomToList(data.name);
+        });
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: `${name}聊天室刪除失敗`,
+          text: '請稍後再試'
+        });
+      }
     });
+  }
 
-    // 清除所有 active 樣式
-    function clearActiveStatus() {
-      document.querySelectorAll('#groupList li, #onlineUsers li').forEach(li => {
-        li.classList.remove('active');
-      });
-    }
+  // 新聊天室通知
+  socket.on('group_created', function(data) {
+    addRoomToList(data.name);
+  });
 
-    // 設定某個使用者為 active
-    function setActiveUser(user) {
-      const listItems = onlineUsers.querySelectorAll('#onlineUsers li');
-      const target = Array.from(listItems).find(li => li.textContent.trim() === user);
-      if (target) target.classList.add('active');
-      
-    }
-    let pastedImageFile = null;
+  // 清除所有 active 樣式
+  function clearActiveStatus() {
+    document.querySelectorAll('#groupList li, #onlineUsers li').forEach(li => {
+      li.classList.remove('active');
+    });
+  }
+
+  // 設定某個使用者為 active
+  function setActiveUser(user) {
+    const listItems = onlineUsers.querySelectorAll('#onlineUsers li');
+    const target = Array.from(listItems).find(li => li.textContent.trim() === user);
+    if (target) target.classList.add('active');
+    
+  }
+  let pastedImageFile = null;
 
   document.getElementById('messageInput').addEventListener('paste', function (e) {
     const items = e.clipboardData.items;
@@ -473,94 +608,97 @@
     }
   });
 
-function sendMessage() {
-  const inputDiv = document.getElementById('messageInput');
-  const nodes = Array.from(inputDiv.childNodes);
+  function sendMessage() {
+    const inputDiv = document.getElementById('messageInput');
+    const nodes = Array.from(inputDiv.childNodes);
 
-  // 遞送內容的順序
-  function processNode(index) {
-    if (index >= nodes.length) {
-      inputDiv.innerHTML = '';
-      return;
-    }
-
-    const node = nodes[index];
-
-    if (node.nodeType === Node.TEXT_NODE ) {
-      const text = node.textContent.trim();
-      if (text) {
-        socket.emit('send_message', {
-          room: currentRoom,
-          msg: text
-        });
+    // 遞送內容的順序
+    function processNode(index) {
+      if (index >= nodes.length) {
+        inputDiv.innerHTML = '';
+        return;
       }
-      processNode(index + 1); // 繼續處理下一個節點
-    }
-    // else if(node.nodeType === Node.ELEMENT_NODE){
-    //     // 其他標籤（div, pre, span, br, strong...）— 取出其文字內容
-    //     const text = node.innerText || node.textContent || '';
-    //     const trimmed = text.trim();
-    //     if (trimmed) {
-    //       socket.emit('send_message', {
-    //         room: currentRoom,
-    //         msg: trimmed
-    //       });
-    //     }
-    //     processNode(index + 1); // 繼續處理下一個節點
-    // }
-    
-    else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'IMG') {
-      const img = node;
-      if (img.src.startsWith('data:image/')) {
-        const blob = dataURLtoBlob(img.src);
-        const formData = new FormData();
-        formData.append('file', blob, 'pasted.png');
 
-        fetch('/upload_file', {
-          method: 'POST',
-          body: formData
-        }).then(res => res.json()).then(data => {
-          if (data.success) {
-            socket.emit('send_message', {
-              room: currentRoom,
-              msg: '',
-              file: data.file_url,
-              filename: data.filename,
-              mimetype: data.mimetype
-            });
-          }
-          processNode(index + 1); // 等圖片上傳完才處理下一個
-        });
-      } else {
+      const node = nodes[index];
+
+      if (node.nodeType === Node.TEXT_NODE ) {
+        const text = node.textContent.trim();
+        if (text) {
+          socket.emit('send_message', {
+            room: currentRoom,
+            msg: text
+          });
+        }
+        processNode(index + 1); // 繼續處理下一個節點
+      }
+      // else if(node.nodeType === Node.ELEMENT_NODE){
+      //     // 其他標籤（div, pre, span, br, strong...）— 取出其文字內容
+      //     const text = node.innerText || node.textContent || '';
+      //     const trimmed = text.trim();
+      //     if (trimmed) {
+      //       socket.emit('send_message', {
+      //         room: currentRoom,
+      //         msg: trimmed
+      //       });
+      //     }
+      //     processNode(index + 1); // 繼續處理下一個節點
+      // }
+      
+      else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'IMG') {
+        const img = node;
+        if (img.src.startsWith('data:image/')) {
+          const blob = dataURLtoBlob(img.src);
+          const formData = new FormData();
+          formData.append('file', blob, 'pasted.png');
+
+          fetch('/upload_file', {
+            method: 'POST',
+            body: formData
+          }).then(res => res.json()).then(data => {
+            if (data.success) {
+              socket.emit('send_message', {
+                room: currentRoom,
+                msg: '',
+                file: data.file_url,
+                filename: data.filename,
+                mimetype: data.mimetype
+              });
+            }
+            processNode(index + 1); // 等圖片上傳完才處理下一個
+          });
+        } else {
+          processNode(index + 1);
+        }
+      }
+
+      else {
+        // 忽略其他元素
         processNode(index + 1);
       }
     }
 
-    else {
-      // 忽略其他元素
-      processNode(index + 1);
+    processNode(0); // 從第一個開始遞送
+  }
+  
+  function dataURLtoBlob(dataurl) {
+    const arr = dataurl.split(',');
+    const mime = arr[0].match(/:(.*?);/)[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
     }
+    return new Blob([u8arr], { type: mime });
   }
 
-  processNode(0); // 從第一個開始遞送
-}
-    function dataURLtoBlob(dataurl) {
-      const arr = dataurl.split(',');
-      const mime = arr[0].match(/:(.*?);/)[1];
-      const bstr = atob(arr[1]);
-      let n = bstr.length;
-      const u8arr = new Uint8Array(n);
-      while (n--) {
-        u8arr[n] = bstr.charCodeAt(n);
-      }
-      return new Blob([u8arr], { type: mime });
-    }
-    function escapeHTML(str) {
-      const div = document.createElement('div');
-      div.appendChild(document.createTextNode(str));
-      return div.innerHTML;
-    }
-    (function applySettingsOnLoad() {
+  function escapeHTML(str) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+  }
+
+  (function applySettingsOnLoad() {
       const settings = JSON.parse(localStorage.getItem('chatSettings') || '{}');
 
       if (settings.bgType === 'image' && settings.bgImage) {
@@ -578,6 +716,7 @@ function sendMessage() {
       }
       updateSidebarColor(settings.bgColor || '#ffffff');
     })();
+
   function applyUserStyle(style) {
     if(style.custom_bg && style.custom_bg !== ''){
       document.body.style.background = `url(${style.custom_bg}) center/cover`;

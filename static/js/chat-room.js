@@ -143,7 +143,6 @@ function backToChat() {
   document.getElementById('chat').style.display = 'block';
 }
 
-
 function getBrightness(hexColor) {
     // 將 HEX 轉為 RGB
     const rgb = hexColor.replace('#', '').match(/.{2}/g).map(x => parseInt(x, 16));
