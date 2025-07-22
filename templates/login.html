@@ -1,59 +1,163 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-Hant">
 <head>
-  <meta charset="utf-8">
+  <meta charset="UTF-8">
   <title>登入</title>
+  <link rel="stylesheet" href="/static/css/sweetalert2.min.css">
   <style>
-    body { font-family: sans-serif; background: #f2f2f2; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-    .login-box { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: 300px; }
-    .login-box h2 { text-align: center; }
-    .login-box input { width: 100%; padding: 10px; margin: 10px 0; }
-    .login-box button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 5px; }
-    .login-box p { text-align: center; margin-top: 10px; }
-    .login-box a { color: #007bff; text-decoration: none; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #007bff, #00c6ff);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      min-height: 100vh;
+      position: relative; /* 🔐 防止外部元素影響 flex 排版 */
+      margin: 0;
+    }
+
+    .login-box {
+      background: #fff;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+      width: 100%;
+      max-width: 360px;
+      text-align: center;
+    }
+
+    .login-box h2 {
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    .login-box input {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 16px;
+    }
+
+    .login-box button {
+      width: 100%;
+      padding: 12px;
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    .login-box button:hover {
+      background: #0056b3;
+    }
+
+    .login-box p {
+      margin-top: 15px;
+      font-size: 14px;
+    }
+
+    .login-box a {
+      color: #007bff;
+      text-decoration: none;
+      margin: 0 5px;
+    }
+
+    .login-box a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
   <div class="login-box">
-    <h2>登入</h2>
-    <input type="text" id="loginUsername" placeholder="帳號">
-    <input type="password" id="loginPassword" placeholder="密碼">
-    <button id="login_utton" onclick="login()">登入</button>
-    <p><a href="#" onclick="location.href = '/register'">註冊</a> | <a href="#" onclick="showReset()">忘記密碼</a></p>
+    <h2>使用者登入</h2>
+    <form onsubmit="login(); return false;">
+      <input type="text" id="loginUsername" placeholder="帳號">
+      <input type="password" id="loginPassword" placeholder="密碼" autocomplete="off">
+      <button type="submit">登入</button>
+    </form>
+    <p>
+      <a href="/register">註冊</a> |
+      <a href="#" onclick="showReset()">忘記密碼</a>
+    </p>
   </div>
-</body>
-</html>
 
-<script>
-  function login() {
-      fetch('/login', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-          username: document.getElementById('loginUsername').value,
-          password: document.getElementById('loginPassword').value
-          })
-      }).then(res => res.json()).then(data => {
-          if (data.success) location.href = "/";
-          else alert(data.message);
-      });
-  }
+  <script src="{{ url_for('static', filename='js/sweetalert2.js') }}"></script>
+  <script>
+    async function login() {
+      const username = document.getElementById('loginUsername').value.trim();
+      const password = document.getElementById('loginPassword').value.trim();
 
-  function showReset() {
-    const name = prompt("帳號：");
-    const pw = prompt("新密碼：");
-    fetch('/reset_password', {
+      if (!username || !password) {
+        Swal.fire('請輸入帳號與密碼', '', 'warning');
+        return;
+      }
+
+      const res = await fetch('/login', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ username: name, new_password: pw })
-    }).then(res => res.json()).then(data => {
-        if (data.success) alert("密碼已重設");
-        else alert(data.message);
-    });
-  }
-  document.addEventListener('keydown', function(event) {
-  if (event.key === 'Enter') {
-    login();
-  }
-  });
-</script>
+        body: JSON.stringify({ username, password })
+      });
+
+      const data = await res.json();
+    if (data.success) {
+      Swal.fire({
+        icon: 'success',
+        title: '登入成功',
+        showConfirmButton: false,
+        timer: 1000,
+        didClose: () => {
+          location.href = "/";
+        }
+      })
+      } else {
+        Swal.fire('登入失敗', data.message || '請檢查帳號或密碼', 'error');
+      }
+    }
+
+    async function showReset() {
+      const { value: username } = await Swal.fire({
+        title: '重設密碼',
+        input: 'text',
+        inputLabel: '請輸入帳號',
+        inputPlaceholder: '帳號',
+        confirmButtonText: '下一步',
+        cancelButtonText: '取消',
+        showCancelButton: true
+      });
+
+      if (!username) return;
+
+      const { value: newPassword } = await Swal.fire({
+        title: '新密碼',
+        input: 'password',
+        inputLabel: '請輸入新密碼',
+        inputPlaceholder: '新密碼',
+        confirmButtonText: '送出',
+        cancelButtonText: '取消',
+        showCancelButton: true
+      });
+
+      if (!newPassword) return;
+
+      const res = await fetch('/reset_password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, new_password: newPassword })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        Swal.fire('密碼已重設成功', '', 'success');
+      } else {
+        Swal.fire('重設失敗', data.message || '請稍後再試', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

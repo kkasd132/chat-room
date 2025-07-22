@@ -1,40 +1,119 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-Hant">
 <head>
+  <meta charset="utf-8">
   <title>註冊</title>
+  <link rel="stylesheet" href="/static/css/sweetalert2.min.css">
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #007bff, #00c6ff);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      min-height: 100vh;
+      position: relative; /* 🔐 防止外部元素影響 flex 排版 */
+      margin: 0;
+    }
+
+    .register-box {
+      background: white;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+      width: 100%;
+      max-width: 360px;
+      text-align: center;
+    }
+
+    .register-box h2 {
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    .register-box input {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 16px;
+    }
+
+    .register-box button {
+      width: 100%;
+      padding: 12px;
+      background: #28a745;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    .register-box button:hover {
+      background: #218838;
+    }
+
+    .register-box p {
+      margin-top: 15px;
+      font-size: 14px;
+    }
+
+    .register-box a {
+      color: #007bff;
+      text-decoration: none;
+    }
+
+    .register-box a:hover {
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body>
-  <h2>註冊帳號</h2>
-  <input id="registerUsername" placeholder="帳號"><br>
-  <input id="registerPassword" type="password" placeholder="密碼"><br>
-  <button onclick="register()">註冊</button>
+  <div class="register-box">
+    <h2>註冊帳號</h2>
+    <form onsubmit="register(); return false;">
+      <input type="text" id="registerUsername" placeholder="帳號">
+      <input type="password" id="registerPassword" placeholder="密碼">
+      <button type="submit">註冊</button>
+    </form>
+    <p>已有帳號？<a href="/login">返回登入</a></p>
+  </div>
 
-  <p>已有帳號？<a href="/login">返回登入</a></p>
+  <script src="{{ url_for('static', filename='js/sweetalert2.js') }}"></script>
+  <script>
+    async function register() {
+      const username = document.getElementById('registerUsername').value.trim();
+      const password = document.getElementById('registerPassword').value.trim();
+
+      if (!username || !password) {
+        Swal.fire('請輸入帳號與密碼', '', 'warning');
+        return;
+      }
+
+      const res = await fetch('/register', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ username, password })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        Swal.fire({
+          icon: 'success',
+          title: '註冊成功！請登入',
+          showConfirmButton: false,
+          timer: 1000
+        }).then(() => {
+          location.href = "/login";
+        });
+      } else {
+        Swal.fire('註冊失敗', data.message || '請稍後再試', 'error');
+      }
+    }
+  </script>
 </body>
 </html>
-
-<script>
-  document.addEventListener('keydown', function(event) {
-    if (event.key === 'Enter') {
-      register();
-    }
-  });
-
-  function register() {
-    const username = document.getElementById('registerUsername').value;
-    const password = document.getElementById('registerPassword').value;
-
-    fetch('/register', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ username, password })
-    }).then(res => res.json()).then(data => {
-      if (data.success) {
-        alert("註冊成功，請登入");
-        location.href = "/login";
-      } else {
-        alert(data.message);
-      }
-    });
-  }
-</script>

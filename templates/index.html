@@ -12,7 +12,7 @@
   <div class="chat-background"></div>
   <div class="chat-container">
   <div id="sidebar">
-    <h3 style="color: var(--font-color)">聊天室</h3>
+    <h3>聊天室</h3>
     <div>
       <input type="text" id="newRoomName" placeholder="新聊天室名稱">
       <button onclick="createGroup()">建立</button>
@@ -23,8 +23,7 @@
     <div class="user-panel">
         <p>歡迎，{{ username }}</p>
         <div class="user-controls">
-            <a href="/logout" class="control-btn">登出</a>
-            <button onclick="new Notification('🔔 這是通知範例')">測試通知</button>
+            <button class="control-btn" onclick="logout()">登出</button>
             <button class="control-btn" onclick="showSettings()">⚙️ 進階設定</button>
         </div>
     </div>
@@ -188,7 +187,7 @@
               title="切換通知"
               style="cursor: pointer; color: var(--font-color); margin: 10px;"
               data-room="${room}"></i>
-            <span class="private-name" style="cursor: default; color: var(--font-color);">
+            <span class="private-name" style="cursor: default;">
               ${user}
             </span>
           `;
@@ -427,7 +426,7 @@
       <span style="display: flex; align-items: center; gap: 8px;">
       <i class="fa-solid ${bellIcon} bell-toggle" title="通知開關" style="cursor: pointer; color: var(--font-color);"></i>
       </span> 
-      <span class="room-name" style="color: var(--font-color); cursor: default;">${name}</span>
+      <span class="room-name" style="cursor: default;">${name}</span>
       <button class="room-menu-btn" style="color: #ffffff" onclick="toggleRoomOptions(event, this)">⋮</button>
       <div class="room-options" style="display:none; position: absolute; right: 0; top: 100%; background: white; border: 1px solid #ccc; z-index: 10;">
         <button style="color: var(--font-color)" onclick="renameRoom(this, '${name}')">重新命名聊天室</button>
@@ -729,4 +728,20 @@
   }
 
   applyUserStyle(userStyle);
+
+  function logout() {
+    // 可加上 SweetAlert2 確認框
+    Swal.fire({
+      title: '確定要登出嗎？',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: '登出',
+      cancelButtonText: '取消'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        // 導向後端的登出路徑
+        window.location.href = '/logout';
+      }
+    });
+  }
 </script>
