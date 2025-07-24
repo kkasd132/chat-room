@@ -23,6 +23,17 @@ body {
   width: 65%;
   height: 20px;
 }
+.unread-badge {
+    display: none;
+    background-color: red;
+    color: white;
+    border-radius: 10px;
+    padding: 0 6px;
+    margin-left: 6px;
+    font-size: 12px;
+    vertical-align: middle;
+}
+
 /* 每則訊息樣式 */
 .message {
   margin-bottom: 10px;
@@ -192,7 +203,9 @@ button:hover {
   flex-direction: column;
   overflow: auto;
 }
-
+.user-status-dot {
+  flex-shrink: 0;
+}
 /* setting page css */
 
 .top-buttons {

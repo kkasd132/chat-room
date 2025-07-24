@@ -18,7 +18,7 @@
       <button onclick="createGroup()">建立</button>
     </div>
     <ul style="display: inline;" id="groupList"></ul>
-    <h4>在線用戶</h4>
+    <h4>用戶清單</h4>
     <ul style="display: inline;" id="onlineUsers"></ul>
     <div class="user-panel">
         <p>歡迎，{{ username }}</p>
@@ -65,6 +65,7 @@
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImage');
   const roomNotificationSettings = {};
+  let unreadCounts = {}; // 用來記錄各房間的未讀數量
   let currentRoom = "";
 
   window.addEventListener('load', showEnableNotificationPrompt);
@@ -158,69 +159,101 @@
       sendMessage();
     }
   })
-    // 初始化聊天室清單
-    fetch('/get_rooms')
-      .then(res => res.json())
-      .then(data => data.rooms.forEach(addRoomToList));
 
-    socket.emit('login', { username });
-
-    // 在線用戶更新
-    socket.on('update_users', function(users) {
-      onlineUsers.innerHTML = '';
-
-      users
-        .filter(user => user !== username) // ✅ 排除自己
-        .forEach(user => {
-          const room = privateRoomName(username, user);
-          const isNotified = localStorage.getItem(`notify_${room}`) !== 'off';
-          const bellIcon = isNotified ? 'fa-bell' : 'fa-bell-slash';
-
-          const li = document.createElement('li');
-          li.setAttribute('data-room', room);
-          li.style.display = 'flex';
-          li.style.alignItems = 'center';
-          li.style.padding = '4px 8px';
-
-          li.innerHTML = `
-            <i class="fa-solid ${bellIcon} notify-toggle"
-              title="切換通知"
-              style="cursor: pointer; color: var(--font-color); margin: 10px;"
-              data-room="${room}"></i>
-            <span class="private-name" style="cursor: default;">
-              ${user}
-            </span>
-          `;
-
-          // 點擊私聊用戶名稱 → 進入私聊房間
-          li.addEventListener('click', (e) => {
-            if (e.target.classList.contains('notify-toggle')) return; // 點到鈴鐺不切換房間
-            clearActiveStatus();
-            setActiveUser(user);
-            joinRoom(room);
-          });
-
-          // 點擊鈴鐺切換通知狀態
-          li.querySelector('.notify-toggle').addEventListener('click', (e) => {
-            const icon = e.target;
-            const room = icon.dataset.room;
-            const isOn = icon.classList.contains('fa-bell');
-
-            if (isOn) {
-              icon.classList.remove('fa-bell');
-              icon.classList.add('fa-bell-slash');
-              localStorage.setItem(`notify_${room}`, 'off');
-            } else {
-              icon.classList.remove('fa-bell-slash');
-              icon.classList.add('fa-bell');
-              localStorage.setItem(`notify_${room}`, 'on');
-            }
-          });
-
-          onlineUsers.appendChild(li);
-        });
+  fetch('/get_rooms')
+  .then(res => res.json())
+  .then(data => {
+    data.rooms.forEach(room => {
+      addRoomToList(room);
     });
 
+    return fetch('/get_unread');
+  })
+  .then(res => res.json())
+  .then(data => {
+    unreadCounts = data;
+    Object.entries(unreadCounts).forEach(([room, count]) => {
+      updateUnreadBadge(room, count);
+    });
+  });
+
+    function applyUnreadBadges() {
+      Object.entries(unreadCounts).forEach(([room, count]) => {
+        updateUnreadBadge(room, count);
+      });
+    }
+    socket.emit('login', { username });
+      socket.on('update_users', function (data) {
+        const { all_users, online_users } = data;
+        onlineUsers.innerHTML = ''; // 清空列表
+
+        all_users
+          .filter(user => user !== username) // ✅ 排除自己
+          .forEach(user => {
+            const room = privateRoomName(username, user);
+            const isNotified = localStorage.getItem(`notify_${room}`) !== 'off';
+            const bellIcon = isNotified ? 'fa-bell' : 'fa-bell-slash';
+            const isOnline = online_users.includes(user);
+
+            const li = document.createElement('li');
+            li.setAttribute('data-room', room);
+            li.style.display = 'flex';
+            li.style.alignItems = 'center';
+            li.style.padding = '4px 8px';
+            li.style.gap = '6px';
+
+            // ✅ 加入在線狀態燈號
+            li.innerHTML = `
+              <span class="user-status-dot" 
+                    style="width: 10px; height: 10px; border-radius: 50%; background: ${isOnline ? 'limegreen' : 'gray'};">
+              </span>
+              <i class="fa-solid ${bellIcon} notify-toggle"
+                title="切換通知"
+                style="cursor: pointer; color: var(--font-color);"
+                data-room="${room}"></i>
+              <span class="private-name" style="cursor: default;">${user}</span>
+              <span class="unread-badge" style="display: none; margin-left: auto;"></span>
+            `;
+
+            // ✅ 如果是當前房間，加上 active 樣式
+            if (room === currentRoom) {
+              li.classList.add('active');
+            }
+
+            // 點擊私聊用戶名稱 → 進入私聊房間
+            li.addEventListener('click', (e) => {
+              if (e.target.classList.contains('notify-toggle')) return; // 點到鈴鐺不切換房間
+              clearActiveStatus();
+              setActiveUser(user);
+              joinRoom(room);
+            });
+
+            // 點擊鈴鐺切換通知狀態
+            li.querySelector('.notify-toggle').addEventListener('click', (e) => {
+              const icon = e.target;
+              const room = icon.dataset.room;
+              const isOn = icon.classList.contains('fa-bell');
+
+              if (isOn) {
+                icon.classList.remove('fa-bell');
+                icon.classList.add('fa-bell-slash');
+                localStorage.setItem(`notify_${room}`, 'off');
+              } else {
+                icon.classList.remove('fa-bell-slash');
+                icon.classList.add('fa-bell');
+                localStorage.setItem(`notify_${room}`, 'on');
+              }
+            });
+
+            onlineUsers.appendChild(li);
+          });
+          applyUnreadBadges();
+      });
+    socket.on('update_unread', function(data) {
+      const { room, count } = data;
+      unreadCounts[room] = count;
+      updateUnreadBadge(room, count);
+    });
     // 訊息顯示
     let originalTitle = document.title;
     let blinkInterval;
@@ -239,7 +272,7 @@
         clearInterval(blinkInterval);
       }
     });
-    socket.on('message', function(data) {
+    function appendMessageToChatArea(data) {
       const m = document.createElement('div');
       m.classList.add('message');
 
@@ -303,6 +336,21 @@
       m.appendChild(body);
       chatArea.appendChild(m);
       chatArea.scrollTop = chatArea.scrollHeight;
+    }
+    socket.on('message', function(data) {
+      if (data.room !== currentRoom) {
+        // 先取得舊未讀數
+        const currentCount = getUnreadCount(data.room);
+        const newCount = currentCount + 1;
+
+        // 同步更新本地未讀數物件
+        unreadCounts[data.room] = newCount;
+
+        // 更新UI徽章
+        updateUnreadBadge(data.room, newCount);
+      } else {
+        appendMessageToChatArea(data);
+      }
     });
 
     function showEnableNotificationPrompt() {
@@ -382,9 +430,14 @@
       // 清空訊息區
       chatArea.innerHTML = '';
 
+      currentRoom = room;
+
       // 加入 Socket 房間
       socket.emit('join_room', { room });
 
+      // 進入房間時清空未讀數（本地及UI）
+      unreadCounts[room] = 0;
+      updateUnreadBadge(room, 0);
       // 標記聊天室為 active
       const roomLi = groupList.querySelector(`li[data-room="${room}"]`);
       if (roomLi) roomLi.classList.add('active');
@@ -427,6 +480,7 @@
       <i class="fa-solid ${bellIcon} bell-toggle" title="通知開關" style="cursor: pointer; color: var(--font-color);"></i>
       </span> 
       <span class="room-name" style="cursor: default;">${name}</span>
+      <span class="unread-badge style="display: none"></span>
       <button class="room-menu-btn" style="color: #ffffff" onclick="toggleRoomOptions(event, this)">⋮</button>
       <div class="room-options" style="display:none; position: absolute; right: 0; top: 100%; background: white; border: 1px solid #ccc; z-index: 10;">
         <button style="color: var(--font-color)" onclick="renameRoom(this, '${name}')">重新命名聊天室</button>
@@ -462,7 +516,38 @@
 
     document.getElementById('groupList').appendChild(li);
   }
+  function updateUnreadBadge(room, count) {
+    // 同時從群組清單與私訊清單中搜尋
+    const li = document.querySelector(`li[data-room="${room}"]`);
+    if (!li) return;
 
+    let badge = li.querySelector('.unread-badge');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.classList.add('unread-badge');
+      badge.style.cssText = `
+        background: red;
+        color: white;
+        border-radius: 50%;
+        padding: 2px 6px;
+        font-size: 12px;
+        margin-left: auto;
+      `;
+      li.appendChild(badge);
+    }
+
+    if (count > 0) {
+      badge.textContent = count;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.textContent = '';
+      badge.style.display = 'none';
+    }
+  }
+
+  function getUnreadCount(room) {
+    return unreadCounts[room] || 0;
+  }
   function toggleRoomOptions(event, button) {
     event.stopPropagation();
     const options = button.nextElementSibling;
@@ -559,6 +644,17 @@
     addRoomToList(data.name);
   });
 
+  socket.on('login', (data) => {
+    const unreadMap = data.unread || {};
+    for (const [room, count] of Object.entries(unreadMap)) {
+      
+      updateUnreadBadge(room, count);
+    }
+  });
+  socket.on('message_batch', function (messages) {
+    messages.forEach(data => appendMessageToChatArea(data));
+    chatArea.scrollTop = chatArea.scrollHeight;  // ✅ 一次性捲到底部
+  });
   // 清除所有 active 樣式
   function clearActiveStatus() {
     document.querySelectorAll('#groupList li, #onlineUsers li').forEach(li => {

@@ -23,6 +23,9 @@ socketio = SocketIO(app, cors_allowed_origins='*')
 
 online_users = set()
 
+# 紀錄 username 與 socket id 映射
+user_socket_map = {}
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
@@ -57,6 +60,16 @@ class Message(db.Model):
     mimetype = db.Column(db.String(100))
     timestamp = db.Column(db.DateTime, default=datetime.now)
 
+# 未讀訊息
+class Unread(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    room = db.Column(db.String(100))
+    count = db.Column(db.Integer, default=0)
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'room', name='unique_user_room'),
+    )
 @app.route('/')
 def index():
     if "username" not in session:
@@ -91,6 +104,10 @@ def login():
     user = User.query.filter_by(username=data['username']).first()
     if user and user.check_password(data['password']):
         session['username'] = user.username
+
+        # 加入未讀資料
+        unread_entries = Unread.query.filter_by(user_id=user.id).all()
+        unread_data = {entry.room: entry.count for entry in unread_entries}
         return jsonify(success=True)
     return jsonify(success=False, message='帳號或密碼錯誤')
 
@@ -132,13 +149,32 @@ def logout():
     session.clear()
     return redirect('/')
 
+# @app.route('/get_rooms')
+# def get_rooms():
+#     # 從資料庫中讀取聊天室名稱
+#     rooms = Room.query.all()
+#     room_names = [room.name for room in rooms]
+#     return {'rooms': room_names}
+
 @app.route('/get_rooms')
 def get_rooms():
-    # 從資料庫中讀取聊天室名稱
+    username = session.get('username')
+    if not username:
+        return jsonify({'error': 'Not logged in'}), 401
+    
     rooms = Room.query.all()
     room_names = [room.name for room in rooms]
-    return {'rooms': room_names}
+    user = User.query.filter_by(username=username).first()
+    all_users = [u.username for u in User.query.all() if u.username != username]
 
+    # 🔽 查詢所有未讀紀錄
+    unread = Unread.query.filter_by(user_id=user.id).all()
+    unread_dict = {u.room: u.count for u in unread}
+
+    return jsonify({
+        'rooms': room_names,
+        'unread': unread_dict
+    })
 @app.route('/rename_room', methods=['POST'])
 def rename_room():
     data = request.json
@@ -279,19 +315,40 @@ def connect():
         return False
     emit('connected', {'user': session['username']}, broadcast=True)
 
+def get_all_users():
+    return [user.username for user in User.query.all()]
+    
+@socketio.on('login')
+def handle_login(data):
+    username = data['username']
+    if username:
+        user_socket_map[username] = request.sid
+        session['username'] = username
+        online_users.add(username)
+
+    all_users = get_all_users()
+    emit('update_users', {
+        'all_users': all_users,
+        'online_users': list(online_users)
+    }, broadcast=True)
+
 @socketio.on('disconnect')
 def handle_disconnect():
     username = session.get('username')
     if username and username in online_users:
         online_users.remove(username)
-        emit('update_users', list(online_users), broadcast=True)
+        all_users = get_all_users()
+        emit('update_users', {
+            'all_users': all_users,
+            'online_users': list(online_users)
+        }, broadcast=True)
 
-@socketio.on('login')
-def handle_login(data):
-    username = data['username']
-    session['username'] = username
-    online_users.add(username)
-    emit('update_users', list(online_users), broadcast=True)
+    sid = request.sid
+    for user, sid_val in list(user_socket_map.items()):
+        if sid_val == sid:
+            username = user
+            user_socket_map.pop(user)
+            break
 
 @socketio.on('create_group')
 def handle_create_group(data):
@@ -314,19 +371,69 @@ def handle_create_group(data):
 @socketio.on('join_room')
 def handle_join(data):
     room = data['room']
+    username = session.get('username')
     join_room(room)
+
+    # 清除未讀訊息
+    user = User.query.filter_by(username=username).first()
+    unread = Unread.query.filter_by(user_id=user.id, room=room).first()
+    if unread:
+        unread.count = 0
+        db.session.commit()
+
     messages = Message.query.filter_by(room=room).order_by(Message.timestamp).all()
-    for m in messages:
-        emit('message', {
-            'user': m.username,
-            'msg': m.msg,
-            'file': m.file,
-            'filename': m.filename,
-            'mimetype': m.mimetype,
-            'room': m.room,
-            'timestamp': m.timestamp.strftime('%H:%M')
-        })
+    emit('message_batch', [{
+        'user': m.username,
+        'msg': m.msg,
+        'file': m.file,
+        'filename': m.filename,
+        'mimetype': m.mimetype,
+        'room': m.room,
+        'timestamp': m.timestamp.strftime('%H:%M')
+    } for m in messages], to=request.sid)
     emit('joined', {'room': room})
+
+# @socketio.on('send_message')
+# def handle_send(data):
+#     room = data['room']
+#     msg = data.get('msg', '')
+#     file = data.get('file', '')
+#     username = session['username']
+#     filename = data.get('filename')
+#     mimetype = data.get('mimetype')
+
+#     m = Message(room=room, username=username, msg=msg, file=file, filename=filename, mimetype=mimetype)
+#     db.session.add(m)
+#     db.session.commit()
+    
+#     emit('message', {
+#         'user': username,
+#         'msg': msg,
+#         'file': file,
+#         'filename': filename,
+#         'mimetype': mimetype,
+#         'room': room,
+#         'timestamp': m.timestamp.strftime('%H:%M')
+#     }, room=room)
+
+#     # 未讀訊息
+#     all_users = User.query.all()
+#     for user in all_users:
+#         if user.username != username:
+#             unread = Unread.query.filter_by(user_id=user.id, room=room).first()
+#             if unread:
+#                 unread.count += 1
+#             else:
+#                 unread = Unread(user_id=user.id, room=room, count=1)
+#                 db.session.add(unread)
+#     db.session.commit()
+
+def is_user_in_room(username, room_name):
+    # 判斷是否為私訊房間
+    if room_name.startswith('pm-'):
+        parts = room_name[3:].split('-')
+        return username in parts
+    return True  # 對於公共聊天室，一律通知所有其他人
 
 @socketio.on('send_message')
 def handle_send(data):
@@ -337,10 +444,35 @@ def handle_send(data):
     filename = data.get('filename')
     mimetype = data.get('mimetype')
 
+    # 儲存訊息
     m = Message(room=room, username=username, msg=msg, file=file, filename=filename, mimetype=mimetype)
     db.session.add(m)
     db.session.commit()
-    
+
+    # 處理未讀訊息（不包含自己）
+    all_users = [user.username for user in User.query.all()]
+    for user in all_users:
+        if user == username:
+            continue  # 不增加自己的未讀
+        if is_user_in_room(user, room):  # 🔽你需要定義這個輔助方法
+            target = User.query.filter_by(username=user).first()
+            if target:
+                unread = Unread.query.filter_by(user_id=target.id, room=room).first()
+                if not unread:
+                    unread = Unread(user_id=target.id, room=room, count=1)
+                    db.session.add(unread)
+                else:
+                    unread.count += 1
+                db.session.commit()
+
+                # 若該使用者在線上，且未加入房間 → 單獨用 socket id 傳送未讀數
+                target_sid = user_socket_map.get(user)
+                if target_sid:
+                    socketio.emit('update_unread', {
+                        'room': room,
+                        'count': unread.count
+                    }, to=target_sid)
+    # 廣播訊息
     emit('message', {
         'user': username,
         'msg': msg,
@@ -351,6 +483,20 @@ def handle_send(data):
         'timestamp': m.timestamp.strftime('%H:%M')
     }, room=room)
 
+@app.route('/get_unread')
+def get_unread():
+    username = session.get('username')
+    if not username:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    user = User.query.filter_by(username=username).first()
+    unread = Unread.query.filter_by(user_id=user.id).all()
+
+    result = {}
+    for u in unread:
+        result[u.room] = u.count
+
+    return jsonify(result)    
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
