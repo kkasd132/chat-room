@@ -102,6 +102,7 @@ button:hover {
 
 #chat-area { 
   flex: 1; 
+  margin-left: 10px;
   overflow-y: scroll; 
   border-top: 1px solid #ccc;
   padding: 5px; 
@@ -119,6 +120,7 @@ button:hover {
 }
 #messageInput {
   padding: 8px;
+  margin-left: 10px;
   min-height: 80px;
   max-height: 200px;
   width: 85%;
@@ -206,6 +208,33 @@ button:hover {
 .user-status-dot {
   flex-shrink: 0;
 }
+
+.date-separator {
+  text-align: center;
+  margin: 12px 0;
+  font-size: 12px;
+  color: #666;
+  position: relative;
+}
+
+.date-separator::before,
+.date-separator::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 40%;
+  height: 1px;
+  background: #ccc;
+}
+
+.date-separator::before {
+  left: 0;
+}
+
+.date-separator::after {
+  right: 0;
+}
+
 /* setting page css */
 
 .top-buttons {

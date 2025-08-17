@@ -356,7 +356,7 @@ def handle_create_group(data):
     
     # 檢查聊天室是否已經存在
     existing_room = Room.query.filter_by(name=room_name).first()
-    print(existing_room)
+    
     if existing_room:
         return  # 如果聊天室已經存在，則不再創建
     
@@ -389,7 +389,7 @@ def handle_join(data):
         'filename': m.filename,
         'mimetype': m.mimetype,
         'room': m.room,
-        'timestamp': m.timestamp.strftime('%H:%M')
+        'timestamp': m.timestamp.strftime('%Y-%m-%d %H:%M:%S')
     } for m in messages], to=request.sid)
     emit('joined', {'room': room})
 
@@ -480,7 +480,7 @@ def handle_send(data):
         'filename': filename,
         'mimetype': mimetype,
         'room': room,
-        'timestamp': m.timestamp.strftime('%H:%M')
+        'timestamp': m.timestamp.strftime('%Y-%m-%d %H:%M:%S')
     }, room=room)
 
 @app.route('/get_unread')
